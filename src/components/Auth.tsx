@@ -43,6 +43,8 @@ export const Auth: React.FC = () => {
           email,
           password,
           options: {
+            // Ensure confirmation email redirects to the current origin (production domain)
+            emailRedirectTo: `${window.location.origin}/`,
             data: {
               full_name: fullName,
             },
