@@ -27,6 +27,9 @@ import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
 import { useCompany } from '../context/CompanyContext';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 
 interface NewSaleProps {
   onCancel: () => void;
@@ -189,6 +192,211 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
     } finally {
       setLoading(false);
     }
+  };
+
+  const downloadInvoicePDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // Header
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(9, 20, 38);
+    const companyName = activeCompany?.nombre || 'Factura';
+    doc.text(companyName, 14, 25);
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(148, 163, 184); // slate-400
+    doc.text('FACTURA', 14, 32);
+    
+    // Right side header
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(9, 20, 38);
+    const invoiceNum = `#TX-${Math.floor(Math.random() * 9999)}`;
+    doc.text(invoiceNum, pageWidth - 14, 25, { align: 'right' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(new Date().toLocaleString(), pageWidth - 14, 32, { align: 'right' });
+
+    // Client Info Box
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.setFillColor(248, 250, 252); // slate-50
+    doc.roundedRect(14, 42, pageWidth - 28, 40, 3, 3, 'FD');
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(148, 163, 184); 
+    doc.text('FACTURAR A:', 20, 50);
+    
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(9, 20, 38);
+    const clientName = isGuestMode ? manualName : (selectedClient?.nombre || 'Venta Rápida');
+    doc.text(clientName || 'Cliente No Especificado', 20, 57);
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105); 
+    
+    let currentY = 63;
+    const email = isGuestMode ? '' : selectedClient?.email;
+    if (email) { doc.text(`Email: ${email}`, 20, currentY); currentY += 5; }
+    
+    const address = isGuestMode ? manualAddress : selectedClient?.direccion;
+    if (address) { doc.text(`Dir: ${address}`, 20, currentY); currentY += 5; }
+    
+    const phone = isGuestMode ? manualPhone : selectedClient?.telefono;
+    if (phone) { doc.text(`Tel: ${phone}`, 20, currentY); }
+
+    // Payment Info inside Box
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(148, 163, 184);
+    doc.text('MÉTODO DE PAGO:', pageWidth - 20, 50, { align: 'right' });
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    const paymentText = selectedPayment === 'card' ? 'Tarjeta de Crédito' : selectedPayment === 'cash' ? 'Efectivo' : 'Transferencia';
+    
+    doc.setFillColor(9, 20, 38); 
+    const textWidth = doc.getTextWidth(paymentText.toUpperCase());
+    doc.roundedRect(pageWidth - 20 - textWidth - 6, 53, textWidth + 6, 7, 3, 3, 'F');
+    doc.text(paymentText.toUpperCase(), pageWidth - 20 - 3, 58, { align: 'right' });
+
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Vendedor: ${user.user_metadata?.full_name || user.email || 'Admin'}`, pageWidth - 20, 68, { align: 'right' });
+
+    // Table
+    autoTable(doc, {
+      startY: 90,
+      head: [['Descripción', 'Cant.', 'Precio', 'Total']],
+      body: cart.map(item => [
+        item.nombre,
+        item.quantity.toString(),
+        `$${item.precio.toLocaleString('es-CO')}`,
+        `$${(item.precio * item.quantity).toLocaleString('es-CO')}`
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [248, 250, 252], textColor: [9, 20, 38], fontStyle: 'bold', lineColor: [226, 232, 240] },
+      bodyStyles: { textColor: [71, 85, 105], lineColor: [226, 232, 240] },
+      alternateRowStyles: { fillColor: [255, 255, 255] },
+      styles: { fontSize: 10, cellPadding: 6 },
+      columnStyles: {
+        0: { cellWidth: 'auto', fontStyle: 'bold', textColor: [9, 20, 38] },
+        1: { halign: 'center' },
+        2: { halign: 'right' },
+        3: { halign: 'right', fontStyle: 'bold', textColor: [9, 20, 38] }
+      }
+    });
+
+    let finalY = (doc as any).lastAutoTable.finalY + 10;
+    
+    // Observations
+    if (notes) {
+      doc.setDrawColor(253, 230, 138); // amber-200
+      doc.setFillColor(255, 251, 235); // amber-50
+      doc.roundedRect(14, finalY, 100, 30, 3, 3, 'FD');
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(146, 64, 14); // amber-900
+      doc.text('Observaciones del Pedido:', 18, finalY + 6);
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'italic');
+      const splitNotes = doc.splitTextToSize(notes, 92);
+      doc.text(splitNotes, 18, finalY + 12);
+    }
+    
+    // Totals Box
+    doc.setDrawColor(226, 232, 240);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(pageWidth - 80, finalY, 66, 35, 3, 3, 'FD');
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 116, 139);
+    doc.text('Subtotal', pageWidth - 75, finalY + 8);
+    doc.setTextColor(9, 20, 38);
+    doc.text(`$${totals.subtotal.toLocaleString('es-CO')}`, pageWidth - 18, finalY + 8, { align: 'right' });
+    
+    doc.setTextColor(100, 116, 139);
+    doc.text('IVA (19%)', pageWidth - 75, finalY + 15);
+    doc.setTextColor(9, 20, 38);
+    doc.text(`$${totals.taxes.toLocaleString('es-CO')}`, pageWidth - 18, finalY + 15, { align: 'right' });
+    
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.5);
+    doc.line(pageWidth - 75, finalY + 20, pageWidth - 18, finalY + 20);
+    
+    doc.setFontSize(11);
+    doc.text('Total Pago', pageWidth - 75, finalY + 28);
+    doc.setFontSize(14);
+    doc.text(`$${totals.total.toLocaleString('es-CO')}`, pageWidth - 18, finalY + 28, { align: 'right' });
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Gracias por su compra. Documento generado para ${companyName}.`, pageWidth / 2, 280, { align: 'center' });
+
+    doc.save(`Factura_Venta_${Date.now()}.pdf`);
+  };
+
+  const printInvoice = () => {
+    const printContent = document.getElementById('invoice-content');
+    if (!printContent) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Por favor, permite las ventanas emergentes (pop-ups) para imprimir.');
+      return;
+    }
+
+    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map(style => style.outerHTML)
+      .join('\n');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Factura de Venta</title>
+          ${styles}
+          <style>
+            @media print {
+              @page { margin: 1cm; }
+              body { 
+                -webkit-print-color-adjust: exact; 
+                print-color-adjust: exact; 
+                background-color: white !important;
+              }
+            }
+            body { background: white; padding: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="max-w-[800px] mx-auto bg-white">
+            ${printContent.innerHTML}
+          </div>
+          <script>
+            window.onload = () => {
+              setTimeout(() => {
+                window.print();
+                window.close();
+              }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   return (
@@ -608,7 +816,7 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
               </div>
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 text-slate-400">
                 <p className="text-[9px] font-bold text-center uppercase leading-relaxed tracking-widest">
-                  ESTA TRANSACCIÓN SERÁ REGISTRADA POR ADMIN RESGER EL {new Date().toLocaleDateString()}
+                  ESTA TRANSACCIÓN SERÁ REGISTRADA PARA {activeCompany?.nombre?.toUpperCase() || 'LA EMPRESA'} EL {new Date().toLocaleDateString()}
                 </p>
               </div>
             </motion.div>
@@ -646,7 +854,7 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
               <div id="invoice-content" className="flex-1 overflow-y-auto p-10 bg-white">
                 <div className="flex justify-between items-start mb-12">
                   <div>
-                    <h2 className="text-3xl font-black text-[#091426]">RESGER CRM</h2>
+                    <h2 className="text-3xl font-black text-[#091426]">{activeCompany?.nombre || 'Factura'}</h2>
                     <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Invoice / Factura Proforma</p>
                   </div>
                   <div className="text-right">
@@ -716,24 +924,33 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
 
                 <div className="mt-16 pt-8 border-t border-slate-100">
                   <p className="text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.2em] leading-relaxed">
-                    Gracias por confiar en RESGER CRM. Para soporte técnico contacte a support@resger-crm.com
+                    Gracias por confiar en {activeCompany?.nombre || 'nosotros'}. 
                   </p>
                 </div>
               </div>
 
               <div className="p-8 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
                 <div className="flex gap-4">
-                  <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all shadow-sm">
+                  <button 
+                    onClick={printInvoice}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all shadow-sm"
+                  >
                     <Printer className="w-4 h-4" />
                     Imprimir
                   </button>
-                  <button className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all shadow-sm">
+                  <button 
+                    onClick={downloadInvoicePDF}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all shadow-sm"
+                  >
                     <Download className="w-4 h-4" />
-                    Descargar PDF
+                    Guardar PDF
                   </button>
                 </div>
                 <button 
-                  onClick={onFinish}
+                  onClick={() => {
+                    downloadInvoicePDF();
+                    onFinish();
+                  }}
                   className="px-10 py-3 bg-gradient-to-r from-brand-primary to-brand-tertiary text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl hover:shadow-brand-primary/20 transition-all"
                 >
                   Confirmar y Finalizar
