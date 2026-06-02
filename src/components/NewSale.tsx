@@ -929,21 +929,21 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
                 </div>
               </div>
 
-              <div className="p-8 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-                <div className="flex gap-4">
+              <div className="p-4 sm:p-8 bg-slate-50 border-t border-slate-100 flex flex-col-reverse sm:flex-row items-center justify-between gap-4">
+                <div className="flex gap-2 sm:gap-4 w-full sm:w-auto justify-center">
                   <button 
                     onClick={printInvoice}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all shadow-sm"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-5 py-3 sm:py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all shadow-sm"
                   >
                     <Printer className="w-4 h-4" />
-                    Imprimir
+                    <span className="hidden sm:inline">Imprimir</span>
                   </button>
                   <button 
                     onClick={downloadInvoicePDF}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all shadow-sm"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-5 py-3 sm:py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all shadow-sm"
                   >
                     <Download className="w-4 h-4" />
-                    Guardar PDF
+                    <span>Guardar PDF</span>
                   </button>
                 </div>
                 <button 
@@ -951,7 +951,7 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
                     downloadInvoicePDF();
                     onFinish();
                   }}
-                  className="px-10 py-3 bg-gradient-to-r from-brand-primary to-brand-tertiary text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl hover:shadow-brand-primary/20 transition-all"
+                  className="w-full sm:w-auto px-6 sm:px-10 py-3 sm:py-3 bg-gradient-to-r from-brand-primary to-brand-tertiary text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl hover:shadow-brand-primary/20 transition-all"
                 >
                   Confirmar y Finalizar
                 </button>
