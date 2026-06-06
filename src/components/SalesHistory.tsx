@@ -401,7 +401,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
         for (let i = 1; i <= pageCount; i++) {
           doc.setPage(i);
           doc.setFontSize(8);
-          doc.text(`Página ${i} de ${pageCount} - RESGER CRM`, 14, (doc.internal as any).pageSize.height - 10);
+          doc.text(`Página ${i} de ${pageCount} - RESGER`, 14, (doc.internal as any).pageSize.height - 10);
         }
 
         // Save PDF
@@ -681,8 +681,8 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
             <div id="invoice-content" className="flex-1 overflow-y-auto p-10 bg-white">
               <div className="flex justify-between items-start mb-12">
                 <div>
-                  <h2 className="text-3xl font-black text-[#091426]">{activeCompany?.nombre || 'RESGER CRM'}</h2>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Factura Proforma / Historial</p>
+                  <h2 className="text-3xl font-black text-[#091426]">{activeCompany?.nombre || 'RESGER'}</h2>
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Factura / Historial</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xl font-black text-[#091426]">#{selectedSale.id.slice(0, 8).toUpperCase()}</p>
@@ -790,7 +790,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
 
               <div className="mt-16 pt-8 border-t border-slate-100">
                 <p className="text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.2em] leading-relaxed">
-                  Historial generado en RESGER CRM. Este documento no reemplaza una factura electrónica DIAN.
+                  Historial generado en RESGER. Este documento no reemplaza una factura electrónica DIAN.
                 </p>
               </div>
             </div>

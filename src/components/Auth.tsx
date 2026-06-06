@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Mail, Lock, User, AlertCircle, Loader2, Building, ArrowLeft } from 'lucide-react';
+import { LogIn, UserPlus, Mail, Lock, User, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
 export const Auth: React.FC = () => {
@@ -14,7 +14,7 @@ export const Auth: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [companyName, setCompanyName] = useState('');
+  
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,9 +36,7 @@ export const Auth: React.FC = () => {
           password,
         });
         if (error) throw error;
-      } else {
-        if (!companyName) throw new Error('El nombre de la empresa es obligatorio');
-
+        } else {
         const { error, data } = await supabase.auth.signUp({
           email,
           password,
@@ -51,29 +49,8 @@ export const Auth: React.FC = () => {
           },
         });
         if (error) throw error;
-        
-        if (data.user) {
-          // 1. Create company
-          const { data: company, error: companyError } = await supabase
-            .from('companies')
-            .insert([{ nombre: companyName, owner_id: data.user.id }])
-            .select()
-            .single();
 
-          if (companyError) throw companyError;
-
-          // 2. Create membership
-          const { error: memberError } = await supabase
-            .from('company_members')
-            .insert([{ 
-              company_id: company.id, 
-              user_id: data.user.id, 
-              role: 'admin' 
-            }]);
-
-          if (memberError) throw memberError;
-        }
-
+        // No se crean company ni membership desde el frontend (evita errores por token faltante)
         if (data.user && !data.session) {
           setSuccessMessage('¡Registro exitoso! Por favor revisa tu email para confirmar tu cuenta.');
         }
@@ -93,7 +70,7 @@ export const Auth: React.FC = () => {
   const getSubtitle = () => {
     if (isResettingPassword) return 'Ingresa tu email para recibir un enlace de recuperación';
     return isLogin 
-      ? 'Ingresa tus credenciales para acceder a RESGER CRM' 
+      ? 'Ingresa tus credenciales para acceder a RESGER' 
       : 'Empieza a gestionar tus clientes y ventas hoy mismo';
   };
 
@@ -170,20 +147,6 @@ export const Auth: React.FC = () => {
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
                         placeholder="Juan Pérez"
-                        className="w-full pl-11 pr-4 py-3 bg-[#F1F5F9] border-b border-b-[#E2E8F0] focus:border-b-brand-primary rounded-t-md focus:outline-none transition-all text-brand-navy placeholder:text-outline/50"
-                        required={!isLogin && !isResettingPassword}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-brand-navy ml-1 uppercase tracking-wider">Nombre de la Empresa</label>
-                    <div className="relative">
-                      <Building className="absolute left-4 top-1/2 -translate-y-1/2 text-outline w-4 h-4" />
-                      <input
-                        type="text"
-                        value={companyName}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                        placeholder="Mi Empresa S.A."
                         className="w-full pl-11 pr-4 py-3 bg-[#F1F5F9] border-b border-b-[#E2E8F0] focus:border-b-brand-primary rounded-t-md focus:outline-none transition-all text-brand-navy placeholder:text-outline/50"
                         required={!isLogin && !isResettingPassword}
                       />
@@ -280,7 +243,7 @@ export const Auth: React.FC = () => {
         </div>
         
         <p className="mt-8 text-center text-outline text-xs">
-          © 2026 RESGER CRM. Todos los derechos reservados.
+          © 2026 RESGER. Todos los derechos reservados.
         </p>
       </motion.div>
     </div>

@@ -298,7 +298,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin })
               </div>
             </div>
             <div className="p-6 bg-slate-900 rounded-2xl text-white shadow-xl shadow-slate-900/10">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Suscripción RESGER CRM</h4>
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Suscripción RESGER</h4>
               <div className="flex items-center gap-4 mb-6">
                 <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center">
                   <Shield className="w-6 h-6 text-indigo-400" />
