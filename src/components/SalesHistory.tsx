@@ -25,8 +25,7 @@ import {
   Truck,
   Phone,
   MapPin,
-  Mail,
-  Download
+  Mail
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Sale } from '../types';
@@ -35,7 +34,9 @@ import autoTable from 'jspdf-autotable';
 
 import { useCompany } from '../context/CompanyContext';
 
-export const SalesHistory: React.FC = () => {
+interface SalesHistoryProps { user?: any }
+
+export const SalesHistory: React.FC<SalesHistoryProps> = () => {
   const { activeCompany, activeMembership } = useCompany();
   const [sales, setSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -396,11 +397,11 @@ export const SalesHistory: React.FC = () => {
         }
 
         // Footer
-        const pageCount = (doc as any).internal.getNumberOfPages();
+        const pageCount = (doc.internal as any).getNumberOfPages();
         for (let i = 1; i <= pageCount; i++) {
           doc.setPage(i);
           doc.setFontSize(8);
-          doc.text(`Página ${i} de ${pageCount} - ${activeCompany?.nombre || 'Factura'}`, 14, doc.internal.pageSize.height - 10);
+          doc.text(`Página ${i} de ${pageCount} - RESGER CRM`, 14, (doc.internal as any).pageSize.height - 10);
         }
 
         // Save PDF
@@ -442,209 +443,6 @@ export const SalesHistory: React.FC = () => {
   };
 
   const totalSales = sales.reduce((acc, curr) => acc + curr.total, 0);
-
-  const downloadHistoryPDF = () => {
-    if (!selectedSale) return;
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-    
-    // Header
-    doc.setFontSize(24);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(9, 20, 38);
-    const companyName = activeCompany?.nombre || 'Factura';
-    doc.text(companyName, 14, 25);
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(148, 163, 184); 
-    doc.text('FACTURA PROFORMA / HISTORIAL', 14, 32);
-    
-    // Right side header
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(9, 20, 38);
-    const invoiceNum = `#${selectedSale.id.slice(0, 8).toUpperCase()}`;
-    doc.text(invoiceNum, pageWidth - 14, 25, { align: 'right' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139);
-    doc.text(new Date(selectedSale.created_at).toLocaleString(), pageWidth - 14, 32, { align: 'right' });
-
-    // Client Info Box
-    doc.setDrawColor(226, 232, 240); 
-    doc.setFillColor(248, 250, 252); 
-    doc.roundedRect(14, 42, pageWidth - 28, 40, 3, 3, 'FD');
-
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(148, 163, 184); 
-    doc.text('DATOS DE ENTREGA / CLIENTE:', 20, 50);
-    
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(9, 20, 38);
-    const clientName = selectedSale.cliente?.nombre || selectedSale.manual_name || 'Venta Rápida';
-    doc.text(clientName, 20, 57);
-    
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(71, 85, 105); 
-    
-    let currentY = 63;
-    const email = selectedSale.cliente?.email;
-    if (email) { doc.text(`Email: ${email}`, 20, currentY); currentY += 5; }
-    
-    const address = selectedSale.cliente?.direccion || selectedSale.manual_address;
-    if (address) { doc.text(`Dir: ${address}`, 20, currentY); currentY += 5; }
-    
-    const phone = selectedSale.cliente?.telefono || selectedSale.manual_phone;
-    if (phone) { doc.text(`Tel: ${phone}`, 20, currentY); }
-
-    // Payment Info inside Box
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(148, 163, 184);
-    doc.text('VENDEDOR:', pageWidth - 20, 50, { align: 'right' });
-
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(9, 20, 38);
-    const sellerName = selectedSale.vendedor?.full_name || 'Administrador';
-    
-    doc.setFillColor(241, 245, 249); // slate-100
-    doc.setDrawColor(226, 232, 240); // slate-200
-    const textWidth = doc.getTextWidth(sellerName.toUpperCase());
-    doc.roundedRect(pageWidth - 20 - textWidth - 6, 53, textWidth + 6, 7, 3, 3, 'FD');
-    doc.text(sellerName.toUpperCase(), pageWidth - 20 - 3, 58, { align: 'right' });
-
-    // Table
-    autoTable(doc, {
-      startY: 90,
-      head: [['Descripción', 'Cant.', 'Precio', 'Total']],
-      body: saleItems.map(item => [
-        item.producto?.nombre || 'Producto',
-        item.cantidad.toString(),
-        `$${item.precio_unitario.toLocaleString('es-CO')}`,
-        `$${(item.precio_unitario * item.cantidad).toLocaleString('es-CO')}`
-      ]),
-      theme: 'grid',
-      headStyles: { fillColor: [248, 250, 252], textColor: [9, 20, 38], fontStyle: 'bold', lineColor: [226, 232, 240] },
-      bodyStyles: { textColor: [71, 85, 105], lineColor: [226, 232, 240] },
-      alternateRowStyles: { fillColor: [255, 255, 255] },
-      styles: { fontSize: 10, cellPadding: 6 },
-      columnStyles: {
-        0: { cellWidth: 'auto', fontStyle: 'bold', textColor: [9, 20, 38] },
-        1: { halign: 'center' },
-        2: { halign: 'right' },
-        3: { halign: 'right', fontStyle: 'bold', textColor: [9, 20, 38] }
-      }
-    });
-
-    let finalY = (doc as any).lastAutoTable.finalY + 10;
-    
-    // Observations
-    if (selectedSale.notas) {
-      doc.setDrawColor(253, 230, 138); 
-      doc.setFillColor(255, 251, 235); 
-      doc.roundedRect(14, finalY, 100, 30, 3, 3, 'FD');
-      
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(146, 64, 14); 
-      doc.text('Observaciones de Entrega:', 18, finalY + 6);
-      
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'italic');
-      const splitNotes = doc.splitTextToSize(selectedSale.notas, 92);
-      doc.text(splitNotes, 18, finalY + 12);
-    }
-    
-    // Totals Box
-    doc.setDrawColor(226, 232, 240);
-    doc.setFillColor(248, 250, 252);
-    doc.roundedRect(pageWidth - 80, finalY, 66, 35, 3, 3, 'FD');
-
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(100, 116, 139);
-    doc.text('Subtotal', pageWidth - 75, finalY + 8);
-    doc.setTextColor(9, 20, 38);
-    doc.text(`$${(selectedSale.total / 1.19).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, pageWidth - 18, finalY + 8, { align: 'right' });
-    
-    doc.setTextColor(100, 116, 139);
-    doc.text('IVA (19%)', pageWidth - 75, finalY + 15);
-    doc.setTextColor(9, 20, 38);
-    doc.text(`$${(selectedSale.total - (selectedSale.total / 1.19)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, pageWidth - 18, finalY + 15, { align: 'right' });
-    
-    doc.setDrawColor(203, 213, 225);
-    doc.setLineWidth(0.5);
-    doc.line(pageWidth - 75, finalY + 20, pageWidth - 18, finalY + 20);
-    
-    doc.setFontSize(11);
-    doc.text('Total Pago', pageWidth - 75, finalY + 28);
-    doc.setFontSize(14);
-    doc.text(`$${selectedSale.total.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, pageWidth - 18, finalY + 28, { align: 'right' });
-
-    // Footer
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Historial generado para ${companyName}. Este documento no reemplaza una factura electrónica.`, pageWidth / 2, 280, { align: 'center' });
-
-    doc.save(`Historial_Venta_${invoiceNum.replace('#', '')}.pdf`);
-  };
-
-  const printHistoryInvoice = () => {
-    const printContent = document.getElementById('invoice-content');
-    if (!printContent) return;
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Por favor, permite las ventanas emergentes (pop-ups) para imprimir.');
-      return;
-    }
-
-    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-      .map(style => style.outerHTML)
-      .join('\n');
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Factura Historial</title>
-          ${styles}
-          <style>
-            @media print {
-              @page { margin: 1cm; }
-              body { 
-                -webkit-print-color-adjust: exact; 
-                print-color-adjust: exact; 
-                background-color: white !important;
-              }
-            }
-            body { background: white; padding: 20px; }
-          </style>
-        </head>
-        <body>
-          <div class="max-w-[800px] mx-auto bg-white">
-            ${printContent.innerHTML}
-          </div>
-          <script>
-            window.onload = () => {
-              setTimeout(() => {
-                window.print();
-                window.close();
-              }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
 
   return (
     <>
@@ -997,23 +795,23 @@ export const SalesHistory: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-4 sm:p-8 bg-slate-50 border-t border-slate-100 flex flex-col-reverse sm:flex-row items-center justify-end gap-4">
-              <div className="flex gap-2 sm:gap-4 w-full sm:w-auto justify-center">
-                <button 
-                  onClick={printHistoryInvoice}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-8 py-3 bg-[#091426] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:shadow-[#091426]/20 transition-all"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span className="hidden sm:inline">Imprimir</span>
-                </button>
-                <button 
-                  onClick={downloadHistoryPDF}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-8 py-3 bg-white border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all shadow-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Descargar PDF</span>
-                </button>
-              </div>
+            <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button 
+                onClick={() => {
+                  const printContent = document.getElementById('invoice-content');
+                  if (printContent) {
+                    const originalContents = document.body.innerHTML;
+                    document.body.innerHTML = printContent.innerHTML;
+                    window.print();
+                    document.body.innerHTML = originalContents;
+                    window.location.reload();
+                  }
+                }}
+                className="flex items-center gap-2 px-8 py-3 bg-[#091426] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:shadow-[#091426]/20 transition-all"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir Recibo
+              </button>
             </div>
           </motion.div>
         </div>

@@ -280,7 +280,7 @@ export const Auth: React.FC = () => {
         </div>
         
         <p className="mt-8 text-center text-outline text-xs">
-          © 2024 RESGER CRM. Todos los derechos reservados.
+          © 2026 RESGER CRM. Todos los derechos reservados.
         </p>
       </motion.div>
     </div>

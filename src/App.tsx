@@ -252,7 +252,7 @@ function AppContent({ session }: { session: Session | null }) {
     }
   };
 
-  const getTransition = () => {
+  const getTransition = (): any => {
     if (screen === 'NewSale') {
       return { 
         initial: { y: '100%' }, 
