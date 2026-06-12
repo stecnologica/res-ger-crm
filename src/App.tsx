@@ -78,16 +78,20 @@ function AppContent({ session }: { session: Session | null }) {
   const [prevScreen, setPrevScreen] = useState<Screen | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [settingsActiveTab, setSettingsActiveTab] = useState<'profile' | 'taxes' | 'support'>('profile');
   const { activeCompany, memberships, loading: companyLoading, setActiveCompany, activeMembership } = useCompany();
 
   // Hooks para creación de empresa (DEBEN estar aquí arriba)
   const [newCompanyName, setNewCompanyName] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const navigate = (newScreen: Screen) => {
+  const navigate = (newScreen: Screen, initialTab?: 'profile' | 'taxes' | 'support') => {
     setPrevScreen(screen);
     setScreen(newScreen);
     setIsSidebarOpen(false);
+    if (newScreen === 'Settings' && initialTab) {
+      setSettingsActiveTab(initialTab);
+    }
   };
 
   const handleCreateCompany = async () => {
@@ -198,7 +202,7 @@ function AppContent({ session }: { session: Session | null }) {
   const renderScreen = () => {
     switch (screen) {
       case 'Dashboard':
-        return <Dashboard key="Dashboard" user={session.user} />;
+        return <Dashboard key="Dashboard" user={session.user} onNavigate={navigate} />;
       case 'Clients':
         return <Clients key="Clients" onAddClient={() => navigate('CreateClient')} user={session.user} />;
       case 'CreateClient':
@@ -236,6 +240,8 @@ function AppContent({ session }: { session: Session | null }) {
           user={session.user} 
           onNavigate={navigate} 
           isAdmin={activeMembership?.role === 'admin'} 
+          activeTab={settingsActiveTab}
+          onTabChange={setSettingsActiveTab}
         />;
       case 'NewSale':
         return <NewSale 

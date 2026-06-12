@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Mail, Lock, User, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { LogIn, UserPlus, Mail, Lock, User, AlertCircle, Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
 export const Auth: React.FC = () => {
@@ -14,6 +14,7 @@ export const Auth: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -191,13 +192,20 @@ export const Auth: React.FC = () => {
                   <div className="relative">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-outline w-4 h-4" />
                     <input
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full pl-11 pr-4 py-3 bg-[#F1F5F9] border-b border-b-[#E2E8F0] focus:border-b-brand-primary rounded-t-md focus:outline-none transition-all text-brand-navy placeholder:text-outline/50"
+                      className="w-full pl-11 pr-12 py-3 bg-[#F1F5F9] border-b border-b-[#E2E8F0] focus:border-b-brand-primary rounded-t-md focus:outline-none transition-all text-brand-navy placeholder:text-outline/50"
                       required={!isResettingPassword}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-outline hover:text-brand-primary transition-colors cursor-pointer"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
               )}
@@ -242,9 +250,52 @@ export const Auth: React.FC = () => {
           )}
         </div>
         
-        <p className="mt-8 text-center text-outline text-xs">
-          © 2026 RESGER. Todos los derechos reservados.
-        </p>
+        <div className="mt-8 flex flex-col items-center gap-3">
+          <p className="text-center text-outline text-[11px] font-medium tracking-wide">
+            © 2026 RESGER. Todos los derechos reservados.
+          </p>
+          <div className="flex items-center gap-1.5 text-[10px] text-outline/65 font-mono uppercase tracking-widest">
+            <span>Desarrollado por</span>
+            <span className="text-brand-primary font-bold">SoftBootDev</span>
+          </div>
+          <div className="flex items-center gap-3 mt-1 text-[10px] text-outline/50">
+            <a 
+              href="https://www.facebook.com/softbootdev" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-brand-primary transition-colors hover:underline"
+            >
+              Facebook
+            </a>
+            <span>•</span>
+            <a 
+              href="https://www.instagram.com/softbootdev/" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-brand-primary transition-colors hover:underline"
+            >
+              Instagram
+            </a>
+            <span>•</span>
+            <a 
+              href="https://www.youtube.com/@softbootdev" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-brand-primary transition-colors hover:underline"
+            >
+              YouTube
+            </a>
+            <span>•</span>
+            <a 
+              href="https://www.linkedin.com/in/soluciones-tecnologicas-1b0830415/" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-brand-primary transition-colors hover:underline"
+            >
+              LinkedIn
+            </a>
+          </div>
+        </div>
       </motion.div>
     </div>
   );

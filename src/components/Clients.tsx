@@ -18,6 +18,17 @@ export const Clients: React.FC<ClientsProps> = ({ onAddClient, user }) => {
   const { activeCompany } = useCompany();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Search and dynamic filters states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCity, setSelectedCity] = useState('Todos');
+  const [selectedDomain, setSelectedDomain] = useState('Todos');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset page on search or filter change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCity, selectedDomain]);
 
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [editNombre, setEditNombre] = useState('');
@@ -106,6 +117,50 @@ export const Clients: React.FC<ClientsProps> = ({ onAddClient, user }) => {
     }
     setSavingEdit(false);
   };
+
+  // Extract unique cities (last segment of the address after a comma, or the full address)
+  const cities = Array.from(new Set(clients.map(c => {
+    if (!c.direccion) return '';
+    const parts = c.direccion.split(',');
+    return parts[parts.length - 1].trim();
+  }).filter(Boolean))).sort();
+
+  // Extract unique email domains
+  const domains = Array.from(new Set(clients.map(c => {
+    if (!c.email) return '';
+    const parts = c.email.split('@');
+    return parts[1] ? parts[1].trim() : '';
+  }).filter(Boolean))).sort();
+
+  // Filter clients based on name, phone, address, selected city, and selected email domain
+  const filteredClients = clients.filter((client) => {
+    const term = searchTerm.toLowerCase().trim();
+    const matchesSearch = !term || 
+      (client.nombre || '').toLowerCase().includes(term) ||
+      (client.telefono || '').toLowerCase().includes(term) ||
+      (client.direccion || '').toLowerCase().includes(term);
+
+    let matchesCity = true;
+    if (selectedCity !== 'Todos') {
+      const clientCity = client.direccion ? client.direccion.split(',').pop()?.trim() : '';
+      matchesCity = clientCity === selectedCity;
+    }
+
+    let matchesDomain = true;
+    if (selectedDomain !== 'Todos') {
+      const clientDomain = client.email ? client.email.split('@')[1]?.trim() : '';
+      matchesDomain = clientDomain === selectedDomain;
+    }
+
+    return matchesSearch && matchesCity && matchesDomain;
+  });
+
+  const ITEMS_PER_PAGE = 10;
+  const totalPages = Math.ceil(filteredClients.length / ITEMS_PER_PAGE);
+  const paginatedClients = filteredClients.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
 
   return (
     <div className="p-8 max-w-[1440px] mx-auto mt-16 relative">
@@ -219,17 +274,55 @@ export const Clients: React.FC<ClientsProps> = ({ onAddClient, user }) => {
         ))}
       </div>
 
-      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm mb-6 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Filter className="w-5 h-5 text-slate-400" />
-          <span className="text-sm font-bold text-slate-700">Filtrar por:</span>
+      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Search by Name, Phone, or Address */}
+        <div className="flex flex-1 items-center gap-2 max-w-md bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+          <input
+            type="text"
+            placeholder="Buscar por nombre, teléfono o dirección..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-transparent text-sm text-[#091426] outline-none placeholder:text-slate-400"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} className="text-slate-400 hover:text-rose-500 transition-colors cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {['Categoría: Todos', 'Estado: Activos', 'Fecha: Último año'].map((f) => (
-            <select key={f} className="bg-slate-50 border border-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider rounded-full px-4 py-1.5 focus:ring-[#091426]/10 focus:border-[#091426] appearance-none cursor-pointer">
-              <option>{f}</option>
+
+        {/* Dynamic Filters using real table data */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Filter className="w-5 h-5 text-slate-400" />
+            <span className="text-sm font-bold text-slate-700">Filtrar por:</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {/* Filter by City */}
+            <select
+              value={selectedCity}
+              onChange={(e) => setSelectedCity(e.target.value)}
+              className="bg-slate-50 border border-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider rounded-full px-4 py-1.5 focus:ring-[#091426]/10 focus:border-[#091426] cursor-pointer"
+            >
+              <option value="Todos">Ciudad: Todos</option>
+              {cities.map((city) => (
+                <option key={city} value={city}>{city}</option>
+              ))}
             </select>
-          ))}
+
+            {/* Filter by Email Domain */}
+            <select
+              value={selectedDomain}
+              onChange={(e) => setSelectedDomain(e.target.value)}
+              className="bg-slate-50 border border-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider rounded-full px-4 py-1.5 focus:ring-[#091426]/10 focus:border-[#091426] cursor-pointer"
+            >
+              <option value="Todos">Dominio: Todos</option>
+              {domains.map((domain) => (
+                <option key={domain} value={domain}>{domain}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -249,14 +342,14 @@ export const Clients: React.FC<ClientsProps> = ({ onAddClient, user }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-sans">
-                {clients.length === 0 ? (
+                {paginatedClients.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-10 text-center text-slate-400 text-sm italic">
                       No se encontraron clientes.
                     </td>
                   </tr>
                 ) : (
-                  clients.map((client) => (
+                  paginatedClients.map((client) => (
                     <tr key={client.id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -295,17 +388,37 @@ export const Clients: React.FC<ClientsProps> = ({ onAddClient, user }) => {
           )}
         </div>
         <div className="px-6 py-4 bg-slate-50/30 border-t border-slate-100 flex items-center justify-between">
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Mostrando <span className="text-[#091426]">4</span> de <span className="text-[#091426]">1,284</span> clientes</p>
+          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+            Mostrando <span className="text-[#091426]">{filteredClients.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1}</span> a <span className="text-[#091426]">{Math.min(currentPage * ITEMS_PER_PAGE, filteredClients.length)}</span> de <span className="text-[#091426]">{filteredClients.length}</span> clientes
+          </p>
           <div className="flex items-center gap-2">
-            <button className="p-1.5 rounded border border-slate-200 text-slate-400 hover:bg-white hover:text-brand-navy transition-colors disabled:opacity-50" disabled>
+            <button 
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="p-1.5 rounded border border-slate-200 text-slate-400 hover:bg-white hover:text-brand-navy transition-colors disabled:opacity-50 cursor-pointer"
+            >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <div className="flex gap-1">
-              <button className="w-7 h-7 flex items-center justify-center rounded bg-brand-primary text-white text-[10px] font-bold shadow-md shadow-brand-primary/20">1</button>
-              <button className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-600 text-[10px] font-bold hover:bg-white transition-colors">2</button>
-              <button className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-600 text-[10px] font-bold hover:bg-white transition-colors">3</button>
+              {totalPages > 0 && Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`w-7 h-7 flex items-center justify-center rounded text-[10px] font-bold transition-all cursor-pointer ${
+                    currentPage === page
+                      ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
+                      : 'border border-slate-200 text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
             </div>
-            <button className="p-1.5 rounded border border-slate-200 text-slate-400 hover:bg-white hover:text-brand-navy transition-colors">
+            <button 
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages || totalPages === 0}
+              className="p-1.5 rounded border border-slate-200 text-slate-400 hover:bg-white hover:text-brand-navy transition-colors disabled:opacity-50 cursor-pointer"
+            >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -314,3 +427,4 @@ export const Clients: React.FC<ClientsProps> = ({ onAddClient, user }) => {
     </div>
   );
 };
+
