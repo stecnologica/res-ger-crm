@@ -8,7 +8,7 @@ import { Building } from 'lucide-react';
 
 interface TopBarProps {
   onMenuClick: () => void;
-  onNavigate: (screen: any) => void;
+  onNavigate: (screen: any, initialTab?: 'profile' | 'taxes' | 'support') => void;
   user: SupabaseUser;
 }
 
@@ -255,7 +255,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick, onNavigate, user })
             <Bell className="w-5 h-5" />
             <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full border-2 border-white"></span>
           </button>
-          <button className="hover:text-slate-900 transition-colors">
+          <button 
+            onClick={() => onNavigate('Settings', 'support')}
+            className="hover:text-slate-900 transition-colors"
+          >
             <HelpCircle className="w-5 h-5" />
           </button>
         </div>

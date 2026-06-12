@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { 
-  ShoppingCart, 
-  UserPlus, 
-  AlertTriangle, 
-  Percent, 
-  TrendingUp, 
-  Users, 
-  Package, 
-  CalendarDays, 
-  Download, 
-  MoreVertical, 
-  Filter 
+import {
+  ShoppingCart,
+  UserPlus,
+  AlertTriangle,
+  Percent,
+  TrendingUp,
+  Users,
+  Package,
+  CalendarDays,
+  Download,
+  MoreVertical,
+  Filter
 } from 'lucide-react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
@@ -19,9 +19,10 @@ import { useCompany } from '../context/CompanyContext';
 
 interface DashboardProps {
   user: User;
+  onNavigate?: (screen: any) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const { activeCompany, activeMembership } = useCompany();
   const [stats, setStats] = useState({
     totalSales: 0,
@@ -54,7 +55,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         profile:profiles(full_name, email)
       `)
       .eq('company_id', activeCompany.id);
-    
+
     setTeamMembers(data || []);
   };
 
@@ -63,7 +64,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const fetchDashboardData = async () => {
     if (!activeCompany) return;
     setLoading(true);
-    
+
     let salesQuery = supabase
       .from('ventas')
       .select('total, user_id')
@@ -74,7 +75,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
 
     const { data: salesData } = await salesQuery;
-      
+
     const { count: clientCount } = await supabase
       .from('clientes')
       .select('*', { count: 'exact', head: true })
@@ -133,7 +134,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           .from('profiles')
           .select('id, full_name, email')
           .in('id', userIds);
-          
+
         if (profilesData) {
           salesWithProfiles = salesWithProfiles.map(sale => ({
             ...sale,
@@ -151,7 +152,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       .select('*')
       .eq('company_id', activeCompany.id)
       .limit(3);
-    
+
     setTopClients(clients || []);
 
     setLoading(false);
@@ -164,12 +165,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           <h2 className="text-[32px] leading-tight font-bold text-brand-navy font-display">Dashboard</h2>
           <p className="text-outline text-sm mt-1">Panel de control de {activeCompany?.nombre}</p>
         </div>
-        
+
         <div className="flex items-center gap-3">
           {isAdmin && (
             <div className="flex items-center gap-2 bg-white border border-[#E2E8F0] rounded-md px-3 py-2">
               <Users className="w-4 h-4 text-outline" />
-              <select 
+              <select
                 value={selectedUserId}
                 onChange={(e) => setSelectedUserId(e.target.value)}
                 className="text-xs font-semibold text-brand-navy bg-transparent outline-none cursor-pointer"
@@ -234,7 +235,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               <h4 className="font-semibold text-brand-navy font-display text-lg">Actividad Reciente</h4>
               <p className="text-xs text-outline">Últimas transacciones realizadas</p>
             </div>
-            <button className="text-xs font-medium text-brand-primary hover:text-brand-navy transition-colors">Ver Todo</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
@@ -254,7 +254,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-brand-primary/[0.02]';
                   return (
                     <tr key={sale.id} className={`${rowBg} hover:bg-brand-primary/[0.04] transition-colors`}>
-                      <td className="px-4 py-3 font-mono text-[13px] text-brand-navy">#{sale.id.slice(0,6).toUpperCase()}</td>
+                      <td className="px-4 py-3 font-mono text-[13px] text-brand-navy">#{sale.id.slice(0, 6).toUpperCase()}</td>
                       <td className="px-4 py-3 font-medium text-brand-navy">
                         {sale.cliente?.nombre || (
                           <div className="flex flex-col">
@@ -298,7 +298,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               {teamMembers.length > 0 ? (
                 teamMembers.map((member, idx) => {
                   const total = teamPerformance[member.user_id] || 0;
-                  
+
                   return (
                     <div key={member.user_id} className="flex items-center justify-between group">
                       <div className="flex items-center gap-3">
@@ -336,7 +336,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 Tienes <span className="font-mono font-medium text-brand-secondary">{stats.lowStockCount}</span> productos con stock crítico. Revisa el inventario para evitar quiebres.
               </p>
             </div>
-            <button className="relative z-10 w-full py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-md font-medium text-xs uppercase tracking-wider transition-all">
+            <button
+              onClick={() => onNavigate && onNavigate('Products')}
+              className="relative z-10 w-full py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-md font-medium text-xs uppercase tracking-wider transition-all cursor-pointer"
+            >
               Gestionar Stock
             </button>
             <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-brand-primary/30 rounded-full blur-3xl"></div>

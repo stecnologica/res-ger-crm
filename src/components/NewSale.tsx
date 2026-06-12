@@ -48,6 +48,10 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
   const { activeCompany } = useCompany();
   const [loading, setLoading] = useState(false);
   const [productSearch, setProductSearch] = useState('');
+  
+  // Tax / IVA settings state
+  const [applyIva, setApplyIva] = useState(localStorage.getItem('resger_iva_enabled') !== 'false');
+  const ivaRate = Number(localStorage.getItem('resger_iva_rate') || '19');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>('card');
@@ -133,10 +137,10 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
 
   const totals = useMemo(() => {
     const subtotal = cart.reduce((acc, item) => acc + (item.precio * item.quantity), 0);
-    const taxes = subtotal * 0.19;
+    const taxes = applyIva ? subtotal * (ivaRate / 100) : 0;
     const total = subtotal + taxes;
     return { subtotal, taxes, total };
-  }, [cart]);
+  }, [cart, applyIva, ivaRate]);
 
   const handleFinish = async () => {
     if (!activeCompany || cart.length === 0 || !selectedClientId) return;
@@ -327,7 +331,7 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
     doc.text(`$${totals.subtotal.toLocaleString('es-CO')}`, pageWidth - 18, finalY + 8, { align: 'right' });
     
     doc.setTextColor(100, 116, 139);
-    doc.text('IVA (19%)', pageWidth - 75, finalY + 15);
+    doc.text(`IVA (${applyIva ? ivaRate : 0}%)`, pageWidth - 75, finalY + 15);
     doc.setTextColor(9, 20, 38);
     doc.text(`$${totals.taxes.toLocaleString('es-CO')}`, pageWidth - 18, finalY + 15, { align: 'right' });
     
@@ -762,12 +766,26 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, onCreateCl
               </div>
               <div className="p-6 space-y-6">
                 <div className="space-y-4">
+                  {/* Optional Tax toggle */}
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2">
+                    <span className="text-xs font-bold text-slate-700">Facturar con Impuestos / IVA</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={applyIva} 
+                        onChange={(e) => setApplyIva(e.target.checked)} 
+                        className="sr-only peer" 
+                      />
+                      <div className="w-11 h-6 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#091426]"></div>
+                    </label>
+                  </div>
+
                   <div className="flex justify-between text-xs font-bold font-mono">
                     <span className="text-slate-500 uppercase tracking-tighter">Subtotal</span>
                     <span className="text-[#091426]">${totals.subtotal.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                   </div>
                   <div className="flex justify-between text-xs font-bold font-mono">
-                    <span className="text-slate-500 uppercase tracking-tighter">Impuestos (IVA 19%)</span>
+                    <span className="text-slate-500 uppercase tracking-tighter">Impuestos (IVA {ivaRate}%)</span>
                     <span className="text-[#091426] font-black">${totals.taxes.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                   </div>
                   <div className="flex justify-between text-xs font-bold font-mono">

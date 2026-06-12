@@ -9,7 +9,8 @@ import {
   X,
   LogOut,
   ShieldCheck,
-  Plus
+  Plus,
+  Heart
 } from 'lucide-react';
 import { useCompany } from '../context/CompanyContext';
 import { Screen, NavItem } from '../types';
@@ -19,7 +20,7 @@ import logoImg from '../assets/logo.png';
 
 interface SidebarProps {
   currentScreen: Screen;
-  onNavigate: (screen: Screen) => void;
+  onNavigate: (screen: Screen, initialTab?: 'profile' | 'taxes' | 'support') => void;
   isOpen: boolean;
   onClose: () => void;
   user: SupabaseUser;
@@ -121,11 +122,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, onNavigate, isO
           </button>
           <button 
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-all text-sm font-medium rounded-md"
+            className="w-full flex items-center gap-3 px-3 py-2.5 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-all text-sm font-medium rounded-md mb-2"
           >
             <LogOut className="w-4 h-4" />
             <span>Cerrar Sesión</span>
           </button>
+          <div className="pt-3 border-t border-white/5 flex flex-col items-center">
+            <button 
+              onClick={() => onNavigate('Settings', 'support')}
+              className="text-[10px] text-white/35 hover:text-brand-secondary transition-colors font-mono uppercase tracking-wider flex items-center gap-1 py-1"
+            >
+              <span>Desarrollado con</span>
+              <Heart className="w-2.5 h-2.5 text-rose-500 fill-rose-500 animate-pulse" />
+              <span>por SoftBootDev</span>
+            </button>
+          </div>
         </div>
       </aside>
     </>
