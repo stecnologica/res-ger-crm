@@ -1,6 +1,6 @@
 # Manual Técnico: RESGER CRM
 
-Este documento describe la arquitectura, las decisiones de diseño, la estructura de la base de datos y los flujos de trabajo principales de **RESGER CRM**, un sistema integral de Punto de Venta (POS) y gestión de clientes multi-empresa (Multi-Tenant).
+Este documento describe la arquitectura, las decisiones de diseño, la estructura de la base de datos y los módulos de trabajo principales de **RESGER CRM**, un sistema integral de Punto de Venta (POS) y gestión de clientes multi-empresa (Multi-Tenant).
 
 ---
 
@@ -52,44 +52,49 @@ La base de datos está diseñada para ser **Multi-Empresa**. Todas las tablas tr
 
 - **`empresas`**: Almacena los tenants (id, nombre, rut).
 - **`profiles`**: Extiende la autenticación de Supabase con datos del usuario (full_name, email).
-- **`company_members`**: Tabla pivote que une usuarios con empresas y define su nivel de acceso (`role`: admin, user).
+- **`company_members`**: Tabla pivote que une usuarios con empresas y define su nivel de acceso (`role`: admin, employee).
+- **`company_invitations`**: Administra las invitaciones pendientes para que nuevos usuarios se unan a una empresa.
 - **`clientes`**: Base de datos de clientes por empresa (nombre, email, teléfono, dirección).
 - **`productos`**: Catálogo de inventario (nombre, descripcion, precio, stock, imagen_url).
-- **`ventas`**: Registro maestro de cada transacción de POS (total, user_id, cliente_id, notas, modalidad manual/registrado).
+- **`ventas`**: Registro maestro de cada transacción de POS (total, user_id, cliente_id, manual_name).
 - **`venta_items`**: Detalle uno-a-muchos de productos vendidos en una venta (cantidad, precio_unitario).
-- **`cierres_caja`**: Historial de auditorías financieras generadas al final de un turno o jornada (total_ventas, conteo_ventas, periodo_inicio, periodo_fin, notas).
+- **`cierres_caja`**: Historial de auditorías financieras generadas al final de un turno o jornada.
 
 ---
 
-## 4. Flujos de Trabajo Principales (Workflows)
+## 4. Módulos y Funcionalidades Principales
 
-### 4.1. Autenticación y Selección de Empresa
-1. El usuario inicia sesión (`Auth.tsx`).
-2. El sistema consulta `company_members`.
-3. Si no tiene empresa, se le obliga a **crear una** (`App.tsx`).
-4. Si tiene varias, selecciona la empresa activa.
-5. El `CompanyContext` almacena la empresa elegida y el rol del usuario, proveyendo esta información a toda la aplicación.
+### 4.1. Dashboard y Analítica (`Dashboard.tsx`)
+- **Métricas KPIs:** Interfaz que muestra en tiempo real las Ventas Totales, Clientes Nuevos, Conversión y Alertas de Stock crítico (productos con pocas unidades).
+- **Rendimiento de Equipo:** Calcula el volumen de ventas por cada usuario (vendedor), identificando el rendimiento comercial.
+- **Actividad Reciente:** Historial rápido de las últimas transacciones, mostrando el cliente, responsable, fecha y total.
 
-### 4.2. Flujo de Nueva Venta (POS)
-Implementado en `NewSale.tsx`, es un proceso dividido en pasos visuales claros:
-1. **Cliente:** Buscar un cliente existente (con autocompletado) o activar el "Modo Cliente No Registrado" para ventas rápidas o al paso.
-2. **Productos:** Búsqueda en tiempo real. Al hacer clic en un producto (tarjetas visuales), se añade al "Carrito". Se puede modificar la cantidad o eliminar ítems.
-3. **Pago:** Selección del método (Tarjeta, Efectivo, Transferencia).
-4. **Checkout:** Se calcula Subtotal e IVA (19%). Al confirmar, se hace una transacción en base de datos:
-   - Se crea el registro en `ventas`.
-   - Se crean los ítems en `venta_items`.
-   - **Se descuenta el stock** en `productos`.
-5. **Recibo:** Se abre un modal de éxito presentando la "Factura Proforma" con opción de descarga PDF usando `jsPDF`.
+### 4.2. Autenticación y Selección de Empresa (`Auth.tsx`, `App.tsx`)
+1. El usuario inicia sesión.
+2. El sistema consulta `company_members`. Si no tiene empresa asignada, se requiere la creación de un nuevo *Tenant*.
+3. El `CompanyContext` distribuye globalmente la información de la empresa activa y el rol del usuario, inyectando la seguridad base para las consultas a Supabase.
 
-### 4.3. Flujo de Cierre de Caja
-Implementado en `SalesHistory.tsx`, vital para cuadrar la caja.
-1. El usuario solicita un "Cierre de Caja".
-2. El sistema busca la fecha/hora del **último cierre** (`periodo_fin` previo).
-3. Suma todas las ventas realizadas desde ese instante hasta **ahora**.
-4. Al confirmar, se inserta un registro en `cierres_caja` dejando constancia de la fecha, monto y responsable.
-5. Inmediatamente se genera y descarga un **Reporte PDF** detallando todas las ventas por vendedor en ese rango de tiempo.
+### 4.3. Flujo de Nueva Venta - POS (`NewSale.tsx`)
+- **Selección de Cliente Flexible:** Permite asociar la venta a un cliente en base de datos, o usar la opción "Cliente No Registrado" (Invitado) para ventas ágiles sin persistir información de contacto innecesaria.
+- **Carrito Interactivo:** Interfaz visual con catálogo de productos que actualiza dinámicamente los subtotales, totales e IVA al ajustar cantidades.
+- **Checkout Transaccional:** 
+  - Registra datos en las tablas `ventas` y `venta_items`.
+  - **Descuenta automáticamente el stock** del catálogo.
+- **Generación de Recibos:** Creación de facturas proforma en formato PDF listas para descarga mediante `jsPDF`.
 
-### 4.4. Gestión de Usuarios y Permisos
-- El Administrador (creador de la empresa) puede ir a "Configuración > Gestión de Equipo" (`UserManagement.tsx`).
-- Puede buscar usuarios registrados por correo y agregarlos a su empresa.
-- Asigna roles: `admin` (acceso a configuración y cierres globales) o `user` (solo vende y ve su propio historial).
+### 4.4. Catálogo y Gestión de Clientes (`Products.tsx`, `Clients.tsx`)
+- **Inventario Inteligente:** CRUD completo de productos con indicadores visuales de color (Ámbar/Rojo) basados en la lógica de stock bajo o stock en cero.
+- **Validación de Clientes:** CRUD de clientes que incorpora validaciones de unicidad (no duplicados) basadas en el correo electrónico por empresa.
+
+### 4.5. Historial de Ventas y Cierre de Caja (`SalesHistory.tsx`)
+- **Trazabilidad:** Consulta del historial completo con un modal de detalle (desglose por ítem).
+- **Cierre de Turnos:** Algoritmo de consolidación de caja. Calcula las ventas realizadas desde el `periodo_fin` del último cierre hasta la fecha actual, inserta el registro y genera el **Reporte en PDF** con el balance para el control de contabilidad.
+
+### 4.6. Gestión de Equipo (`UserManagement.tsx`)
+- Panel de administradores para buscar correos electrónicos y enviar invitaciones a la plataforma.
+- Visualización de tabla de miembros activos, control de permisos de roles (Administrador vs Empleado) y capacidad de remoción de accesos al tenant.
+
+### 4.7. Configuración, Perfil e Impuestos (`Settings.tsx`)
+- **Gestión de Identidad:** Actualización del perfil de Supabase (Nombre, visualización de correos, estado y rol).
+- **Internacionalización de Impuestos (Taxes):** Configuración localizada almacenada vía `localStorage` (`resger_country`, `resger_iva_rate`) para aplicar la tasa impositiva correspondiente por país (ej. Colombia 19%, México 16%, España 21%) directamente en el módulo de ventas.
+- **Hub de Soporte:** Acceso a canales directos de soporte técnico (WhatsApp, Correo) del equipo de desarrollo (SoftBootDev).
