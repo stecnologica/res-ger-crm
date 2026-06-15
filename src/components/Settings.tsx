@@ -450,7 +450,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin, a
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 my-8">
                   {/* WhatsApp */}
                   <a
-                    href="https://wa.me/573136099600" 
+                    href="https://wa.me/573007159393"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex flex-col justify-between p-5 bg-emerald-50/40 border border-emerald-100 hover:bg-emerald-50 hover:shadow-md rounded-2xl transition-all group cursor-pointer"
@@ -513,7 +513,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin, a
                   {/* Social media links bar */}
                   <div className="flex flex-wrap gap-4 mt-6 pt-6 border-t border-slate-200/60">
                     <a
-                      href="https://www.facebook.com/SoftDev/61581012380420/"
+                      href="https://www.facebook.com/profile.php?id=61590511572273"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 transition-all shadow-sm"

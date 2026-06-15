@@ -260,7 +260,7 @@ export const Auth: React.FC = () => {
           </div>
           <div className="flex items-center gap-3 mt-1 text-[10px] text-outline/50">
             <a 
-              href="https://www.facebook.com/softbootdev" 
+              href="https://www.facebook.com/profile.php?id=61590511572273" 
               target="_blank" 
               rel="noopener noreferrer" 
               className="hover:text-brand-primary transition-colors hover:underline"
