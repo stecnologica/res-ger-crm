@@ -51,6 +51,10 @@ export const Auth: React.FC = () => {
         });
         if (error) throw error;
 
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          throw new Error('El correo electrónico ya se encuentra registrado. Intenta iniciar sesión.');
+        }
+
         // No se crean company ni membership desde el frontend (evita errores por token faltante)
         if (data.user && !data.session) {
           setSuccessMessage('¡Registro exitoso! Por favor revisa tu email para confirmar tu cuenta.');
@@ -79,7 +83,7 @@ export const Auth: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-surface p-4 relative overflow-hidden">
       {/* Background decoration */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand-primary/10 rounded-full blur-[120px] opacity-60" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-brand-tertiary/10 rounded-full blur-[120px] opacity-60" />
+      <div className="absolute bottom-[-10%] rigitght-[-10%] w-[40%] h-[40%] bg-brand-tertiary/10 rounded-full blur-[120px] opacity-60" />
 
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
