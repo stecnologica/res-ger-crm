@@ -40,7 +40,9 @@ export interface Product {
   nombre: string;
   descripcion: string;
   precio: number;
+  costo: number;
   stock: number;
+  stock_minimo: number;
   categoria?: string;
   imagen_url?: string;
   created_at: string;
@@ -52,6 +54,8 @@ export interface Sale {
   id: string;
   cliente_id: string;
   total: number;
+  descuento?: number;
+  metodo_pago?: 'efectivo' | 'tarjeta' | 'transferencia';
   created_at: string;
   user_id: string;
   company_id: string;

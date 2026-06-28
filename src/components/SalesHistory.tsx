@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
   FileText, 
@@ -33,6 +33,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 import { useCompany } from '../context/CompanyContext';
+import { formatCOP } from '../lib/formatCurrency';
 
 interface SalesHistoryProps { user?: any }
 
@@ -53,6 +54,9 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
   const [showClosureDetailModal, setShowClosureDetailModal] = useState(false);
   const [closureSales, setClosureSales] = useState<any[]>([]);
   const [dateFilter, setDateFilter] = useState<'today' | 'all'>('today');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [discountFilter, setDiscountFilter] = useState<'all' | 'discounted' | 'flat'>('all');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'efectivo' | 'tarjeta' | 'transferencia'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalSalesCount, setTotalSalesCount] = useState(0);
   const ITEMS_PER_PAGE = 10;
@@ -168,6 +172,21 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
             }));
           }
         }
+
+        const { data: itemsData } = await supabase
+          .from('venta_items')
+          .select('venta_id')
+          .in('venta_id', salesData.map((sale: any) => sale.id));
+
+        const itemCounts = (itemsData || []).reduce((acc: Record<string, number>, item: any) => {
+          acc[item.venta_id] = (acc[item.venta_id] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+        salesData = salesData.map((sale: any) => ({
+          ...sale,
+          itemsCount: itemCounts[sale.id] || 0
+        }));
       }
       setSales(salesData);
       if (count !== null) setTotalSalesCount(count);
@@ -442,7 +461,45 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
     }
   };
 
-  const totalSales = sales.reduce((acc, curr) => acc + curr.total, 0);
+  const filteredSales = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return sales.filter((sale) => {
+      const matchesQuery = !query || [
+        sale.id,
+        sale.cliente?.nombre,
+        sale.manual_name,
+        sale.vendedor?.full_name,
+        sale.metodo_pago,
+        sale.descuento?.toString(),
+        new Date(sale.created_at).toLocaleDateString('es-CO')
+      ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
+
+      const matchesDiscount = discountFilter === 'discounted'
+        ? Number(sale.descuento || 0) > 0
+        : discountFilter === 'flat'
+          ? Number(sale.descuento || 0) === 0
+          : true;
+
+      const matchesPayment = paymentFilter === 'all' ? true : sale.metodo_pago === paymentFilter;
+
+      return matchesQuery && matchesDiscount && matchesPayment;
+    });
+  }, [sales, searchQuery, discountFilter, paymentFilter]);
+
+  const totalSales = filteredSales.reduce((acc, curr) => acc + Number(curr.total || 0), 0);
+  const formatCurrency = (value: number) => formatCOP(value);
+  const formatPaymentMethod = (method?: string) => {
+    switch (method) {
+      case 'tarjeta':
+        return 'Tarjeta';
+      case 'transferencia':
+        return 'Transferencia';
+      case 'efectivo':
+      default:
+        return 'Efectivo';
+    }
+  };
 
   return (
     <>
@@ -479,8 +536,8 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         {[
-          { label: 'Total Ventas', val: `$${totalSales.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, trend: 'Histórico total', icon: TrendingUp, color: 'text-emerald-600' },
-          { label: 'Ticket Promedio', val: `$${sales.length ? (totalSales / sales.length).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0'}`, trend: 'Por transacción', icon: History, color: 'text-blue-600' },
+          { label: 'Total Ventas', val: formatCOP(totalSales), trend: 'Histórico total', icon: TrendingUp, color: 'text-emerald-600' },
+          { label: 'Ticket Promedio', val: sales.length ? formatCOP(totalSales / sales.length) : formatCOP(0), trend: 'Por transacción', icon: History, color: 'text-blue-600' },
           { label: 'Ventas Realizadas', val: sales.length.toString(), trend: 'Transacciones totales', icon: CheckCircle2, color: 'text-emerald-600' },
           { label: 'Conversión', val: '64.2%', trend: '+4.1% eficiencia', icon: CheckCircle2, color: 'text-emerald-600' },
         ].map((stat, i) => (
@@ -495,98 +552,131 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-10">
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="p-20 flex justify-center items-center">
-              <Loader2 className="w-8 h-8 text-[#091426] animate-spin" />
-            </div>
-          ) : (
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-100">
-                  {['ID Venta', 'Cliente', 'Vendedor', 'Fecha', 'Total', 'Acciones'].map(h => (
-                    <th key={h} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {sales.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-slate-400 text-sm italic">
-                      No se encontraron ventas registradas.
-                    </td>
+      <div className="space-y-6 mb-10">
+        <div>
+          <h1 className="font-display text-2xl font-black text-[#191b25] tracking-tight">Historial de Transacciones</h1>
+          <p className="text-xs text-[#434656] mt-0.5">Consulta la bitácora completa de tickets emitidos, descuentos aplicados y cajeros responsables.</p>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-[#c3c5d9]/30 shadow-xs flex flex-col md:flex-row gap-4 justify-between items-center">
+          <div className="relative w-full md:max-w-md">
+            <Search className="w-4 h-4 text-[#737688] absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar por ID de ticket, cliente, cajero o sucursal..."
+              className="w-full bg-[#fbf8ff] border border-[#c3c5d9]/50 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-[#003ec7] transition-all"
+            />
+          </div>
+
+          <div className="flex gap-2 w-full md:w-auto overflow-x-auto">
+            {[
+              { id: 'all', label: 'Ver Todos', icon: 'receipt_long' },
+              { id: 'discounted', label: 'Con Descuento', icon: 'percent' },
+              { id: 'flat', label: 'Precio Completo', icon: 'payments' }
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setDiscountFilter(opt.id as any)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-display flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${discountFilter === opt.id ? 'bg-[#003ec7]/10 text-[#003ec7] border border-[#003ec7]/20' : 'bg-slate-50 text-[#434656] border border-gray-100 hover:bg-slate-100'}`}
+              >
+                <span className="material-symbols-outlined text-sm">{opt.icon}</span>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-[#c3c5d9]/30 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="p-20 flex justify-center items-center">
+                <Loader2 className="w-8 h-8 text-[#091426] animate-spin" />
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#fbf8ff] border-b border-[#c3c5d9]/30 text-[10px] font-bold uppercase tracking-wider text-gray-500 font-display">
+                    <th className="p-4">Ticket ID</th>
+                    <th className="p-4">Fecha</th>
+                    <th className="p-4">Sucursal</th>
+                    <th className="p-4">Cliente</th>
+                    <th className="p-4">Atendido Por</th>
+                    <th className="p-4 text-center">Productos</th>
+                    <th className="p-4 text-right">Descuento</th>
+                    <th className="p-4 text-right">Monto Total</th>
+                    <th className="p-4 text-center">Detalle</th>
                   </tr>
-                ) : (
-                  sales.map((sale) => (
-                    <tr key={sale.id} className="hover:bg-slate-50/30 transition-colors group">
-                      <td className="px-6 py-4 font-mono text-xs font-black text-[#091426] tracking-tighter">#{sale.id.slice(0,8).toUpperCase()}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black text-[#091426] border border-slate-200 uppercase tracking-tighter">
-                            {sale.cliente?.nombre.charAt(0) || '?'}
-                          </div>
-                          <div>
-                            <p className="text-sm font-black text-[#091426] tracking-tight">{sale.cliente?.nombre || sale.manual_name || 'Venta Rápida'}</p>
-                            <p className="text-[10px] text-slate-400 font-mono italic">{sale.cliente?.email || 'Sin correo'}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-600 uppercase">
-                            {sale.vendedor?.full_name?.[0] || sale.vendedor?.email?.[0] || '?'}
-                          </div>
-                          <span className="text-xs font-medium text-slate-600">
-                            {sale.vendedor?.full_name || 'Admin'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-xs font-bold text-slate-600 tracking-tight">{new Date(sale.created_at).toLocaleDateString()}</p>
-                        <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mt-0.5">{new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                      </td>
-                      <td className="px-6 py-4 font-mono font-black text-sm text-[#091426] tracking-tighter">${sale.total.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                      <td className="px-6 py-4 text-right">
-                        <button 
-                          onClick={() => handleViewDetail(sale)}
-                          className="flex items-center gap-2 px-3 py-1.5 text-slate-500 hover:text-[#091426] hover:bg-slate-100 rounded-lg transition-all text-[10px] font-black uppercase tracking-widest"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          Detalle
-                        </button>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-xs">
+                  {filteredSales.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="p-12 text-center text-gray-400 font-medium">
+                        <span className="material-symbols-outlined text-block text-4xl mb-2">find_in_page</span>
+                        No se encontraron registros de ventas con los filtros aplicados.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          )}
-        </div>
-        <div className="bg-slate-50/50 px-6 py-4 border-t border-slate-100 flex items-center justify-between">
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">
-            Mostrando {sales.length} de {totalSalesCount} transacciones
-          </p>
-          <div className="flex items-center gap-1">
-            <button 
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="p-1.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-white hover:text-[#091426] transition-all disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <div className="flex gap-1.5">
-              <button className="w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black bg-brand-primary text-white shadow-xl shadow-brand-primary/20">
-                {currentPage}
+                  ) : (
+                    filteredSales.map((sale) => (
+                      <tr key={sale.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-4 font-bold text-gray-950 font-mono">#{sale.id.slice(0, 8).toUpperCase()}</td>
+                        <td className="p-4 text-gray-500 font-mono">{new Date(sale.created_at).toLocaleDateString('es-CO')}</td>
+                        <td className="p-4 text-gray-900 font-semibold">{activeCompany?.nombre || 'Sucursal Principal'}</td>
+                        <td className="p-4 text-gray-900">{sale.cliente?.nombre || sale.manual_name || 'Cliente General (Mostrador)'}</td>
+                        <td className="p-4 text-gray-500">{sale.vendedor?.full_name || 'Admin'}</td>
+                        <td className="p-4 text-center font-bold text-gray-900">{sale.itemsCount || 0} artículos</td>
+                        <td className="p-4 text-right">
+                          {Number(sale.descuento || 0) > 0 ? (
+                            <span className="bg-red-50 text-[#ba1a1a] font-bold px-1.5 py-0.5 rounded font-display text-[10px]">
+                              -{formatCurrency(Number(sale.descuento || 0))}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-right font-mono font-black text-gray-900 text-sm">{formatCurrency(Number(sale.total || 0))}</td>
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() => handleViewDetail(sale)}
+                            className="w-7 h-7 bg-slate-50 hover:bg-[#dde1ff] text-[#434656] hover:text-[#003ec7] rounded-md flex items-center justify-center border border-gray-100 mx-auto cursor-pointer"
+                            title="Ver Detalles del Ticket"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div className="bg-[#fbf8ff] px-6 py-4 border-t border-[#c3c5d9]/20 flex items-center justify-between">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              Mostrando {filteredSales.length} de {totalSalesCount} transacciones
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-white hover:text-[#091426] transition-all disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="flex gap-1.5">
+                <button className="w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black bg-[#003ec7] text-white shadow-sm">
+                  {currentPage}
+                </button>
+              </div>
+              <button
+                onClick={() => setCurrentPage((p) => p + 1)}
+                disabled={currentPage * ITEMS_PER_PAGE >= totalSalesCount}
+                className="p-1.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-white hover:text-[#091426] transition-all disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <button 
-              onClick={() => setCurrentPage(p => p + 1)}
-              disabled={currentPage * ITEMS_PER_PAGE >= totalSalesCount}
-              className="p-1.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-white hover:text-[#091426] transition-all disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </div>
@@ -641,7 +731,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
                     <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mt-1">Por: {c.user?.full_name || 'Usuario'}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-black tracking-tight">${c.total_ventas.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                    <p className="text-sm font-black tracking-tight">{formatCOP(c.total_ventas)}</p>
                     <p className="text-[9px] font-bold uppercase tracking-widest opacity-50">{c.conteo_ventas} ventas</p>
                   </div>
                 </button>
@@ -764,8 +854,8 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
                         <p className="text-sm font-bold text-[#091426]">{item.producto?.nombre || 'Producto'}</p>
                       </td>
                       <td className="py-4 text-center text-sm font-bold text-slate-600">{item.cantidad}</td>
-                      <td className="py-4 text-right text-sm font-mono text-slate-600">${item.precio_unitario.toLocaleString('es-CO')}</td>
-                      <td className="py-4 text-right text-sm font-mono font-bold text-[#091426]">${(item.precio_unitario * item.cantidad).toLocaleString('es-CO')}</td>
+                      <td className="py-4 text-right text-sm font-mono text-slate-600">{formatCOP(item.precio_unitario)}</td>
+                      <td className="py-4 text-right text-sm font-mono font-bold text-[#091426]">{formatCOP(item.precio_unitario * item.cantidad)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -774,16 +864,16 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
               <div className="flex justify-end pt-8 border-t border-slate-200">
                 <div className="w-full max-w-[240px] space-y-3">
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-500 font-bold uppercase tracking-widest">Subtotal</span>
-                    <span className="font-mono font-black text-[#091426]">${(selectedSale.total / 1.19).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                    <span className="text-slate-500 font-bold uppercase tracking-widest">Método de pago</span>
+                    <span className="font-mono font-black text-[#091426]">{formatPaymentMethod(selectedSale.metodo_pago)}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-500 font-bold uppercase tracking-widest">IVA (19%)</span>
-                    <span className="font-mono font-black text-[#091426]">${(selectedSale.total - (selectedSale.total / 1.19)).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                    <span className="text-slate-500 font-bold uppercase tracking-widest">Descuento aplicado</span>
+                    <span className="font-mono font-black text-rose-600">{Number(selectedSale.descuento || 0) > 0 ? formatCurrency(Number(selectedSale.descuento || 0)) : 'Sin descuento'}</span>
                   </div>
                   <div className="flex justify-between pt-3 border-t-2 border-slate-900">
                     <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Total Pago</span>
-                    <span className="text-xl font-black text-[#091426] font-mono tracking-tight">${selectedSale.total.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                    <span className="text-xl font-black text-[#091426] font-mono tracking-tight">{formatCurrency(Number(selectedSale.total || 0))}</span>
                   </div>
                 </div>
               </div>
@@ -841,7 +931,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
                 </div>
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Total</p>
-                  <p className="text-xl font-black text-emerald-600">${closureData.total.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                  <p className="text-xl font-black text-emerald-600">{formatCOP(closureData.total)}</p>
                 </div>
               </div>
 
@@ -910,7 +1000,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Total Recaudado</p>
-                  <p className="text-xl font-black text-[#091426]">${selectedClosure.total_ventas.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                  <p className="text-xl font-black text-[#091426]">{formatCOP(selectedClosure.total_ventas)}</p>
                 </div>
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Ventas Totales</p>
@@ -943,7 +1033,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
                         <tr key={sale.id}>
                           <td className="px-6 py-4 text-[10px] font-mono font-bold text-[#091426]">#{sale.id.slice(0,8).toUpperCase()}</td>
                           <td className="px-6 py-4 text-xs font-bold text-slate-600">{sale.cliente?.nombre || sale.manual_name || 'General'}</td>
-                          <td className="px-6 py-4 text-xs font-mono font-black text-right">${sale.total.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                          <td className="px-6 py-4 text-xs font-mono font-black text-right">{formatCOP(sale.total)}</td>
                         </tr>
                       ))}
                     </tbody>
