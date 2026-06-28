@@ -888,19 +888,135 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
             <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end">
               <button 
                 onClick={() => {
-                  const printContent = document.getElementById('invoice-content');
-                  if (printContent) {
-                    const originalContents = document.body.innerHTML;
-                    document.body.innerHTML = printContent.innerHTML;
-                    window.print();
-                    document.body.innerHTML = originalContents;
-                    window.location.reload();
+                  if (!selectedSale || !activeCompany) return;
+                  try {
+                    const doc = new jsPDF({
+                      orientation: 'portrait',
+                      unit: 'mm',
+                      format: [80, 200]
+                    });
+                    
+                    const width = doc.internal.pageSize.getWidth();
+                    let y = 0;
+
+                    // 1. Barra superior azul oscura
+                    doc.setFillColor(9, 20, 38); // #091426
+                    doc.rect(0, y, width, 4, 'F');
+                    y += 12;
+
+                    // 2. Icono e Info Principal
+                    doc.setDrawColor(9, 20, 38);
+                    doc.setFillColor(255, 255, 255);
+                    doc.setLineWidth(0.7);
+                    doc.circle(width / 2, y, 4, 'FD');
+                    doc.setTextColor(9, 20, 38);
+                    doc.setFontSize(8);
+                    doc.text('$', width / 2 - 1, y + 1.5);
+                    y += 10;
+
+                    doc.setTextColor(25, 27, 37);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(14);
+                    doc.text('Copia de Recibo', width / 2, y, { align: 'center' });
+                    y += 5;
+
+                    doc.setTextColor(115, 118, 136);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8);
+                    doc.text('Generado desde el historial', width / 2, y, { align: 'center' });
+                    y += 8;
+
+                    const drawDashedLine = (yPos: number) => {
+                      doc.setDrawColor(200, 200, 200);
+                      doc.setLineWidth(0.3);
+                      doc.setLineDashPattern([1, 1], 0);
+                      doc.line(5, yPos, width - 5, yPos);
+                      doc.setLineDashPattern([], 0);
+                    };
+                    
+                    drawDashedLine(y);
+                    y += 8;
+
+                    // 3. Datos de la empresa y ticket
+                    doc.setTextColor(0, 0, 0);
+                    doc.setFont('courier', 'bold');
+                    doc.setFontSize(12);
+                    doc.text((activeCompany.nombre || 'MI NEGOCIO').toUpperCase(), width / 2, y, { align: 'center' });
+                    y += 5;
+                    
+                    doc.setFont('courier', 'normal');
+                    doc.setFontSize(8);
+                    doc.text(`Fecha: ${new Date(selectedSale.created_at).toLocaleString('es-CO')}`, width / 2, y, { align: 'center' });
+                    y += 4;
+                    doc.text(`Ticket: #${selectedSale.id.substring(0,8).toUpperCase()}`, width / 2, y, { align: 'center' });
+                    y += 8;
+
+                    drawDashedLine(y);
+                    y += 6;
+
+                    // 4. Encabezados de Tabla
+                    doc.setFont('courier', 'bold');
+                    doc.setFontSize(8);
+                    doc.text('DESCRIPCIÓN', 5, y);
+                    doc.text('CANT x PRECIO = TOTAL', width - 5, y, { align: 'right' });
+                    y += 5;
+
+                    // 5. Ítems
+                    doc.setFont('courier', 'normal');
+                    saleItems.forEach((item: any) => {
+                      let name = item.producto?.nombre || 'Producto';
+                      if (name.length > 15) name = name.substring(0, 15) + '...';
+                      
+                      doc.text(name, 5, y);
+                      const calc = `${item.cantidad} x ${formatCOP(item.precio_unitario)} = ${formatCOP(item.precio_unitario * item.cantidad)}`;
+                      doc.text(calc, width - 5, y, { align: 'right' });
+                      y += 5;
+                    });
+
+                    y += 3;
+                    drawDashedLine(y);
+                    y += 6;
+
+                    // 6. Totales
+                    doc.setFont('courier', 'bold');
+                    
+                    if (Number(selectedSale.descuento || 0) > 0) {
+                      doc.setTextColor(100, 100, 100);
+                      doc.text(`Descuento aplicado:`, 5, y);
+                      doc.setTextColor(186, 26, 26);
+                      doc.text(`-${formatCOP(Number(selectedSale.descuento))}`, width - 5, y, { align: 'right' });
+                      doc.setTextColor(0, 0, 0);
+                      y += 5;
+                    }
+                    
+                    y += 2;
+                    doc.setFontSize(10);
+                    doc.text('TOTAL PAGADO:', 5, y);
+                    doc.text(formatCOP(Number(selectedSale.total || 0)), width - 5, y, { align: 'right' });
+                    y += 10;
+                    
+                    // 7. Info Final
+                    doc.setFont('courier', 'normal');
+                    doc.setFontSize(8);
+                    doc.setTextColor(100, 100, 100);
+                    doc.text(`Cliente: ${selectedSale.cliente?.nombre || selectedSale.manual_name || 'Venta Rápida'}`, width / 2, y, { align: 'center' });
+                    y += 4;
+                    doc.text(`PAGO EN: ${formatPaymentMethod(selectedSale.metodo_pago).toUpperCase()}`, width / 2, y, { align: 'center' });
+                    y += 8;
+                    
+                    doc.setFont('courier', 'bold');
+                    doc.text('*** DOCUMENTO INFORMATIVO ***', width / 2, y, { align: 'center' });
+
+                    doc.save(`Recibo_${selectedSale.id.substring(0,8)}.pdf`);
+                  } catch (error) {
+                    console.error("Error generating PDF", error);
+                    alert("Hubo un error al generar el PDF.");
                   }
                 }}
-                className="flex items-center gap-2 px-8 py-3 bg-[#091426] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:shadow-[#091426]/20 transition-all"
+                className="flex items-center gap-2 px-8 py-3 bg-[#091426] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:shadow-[#091426]/20 transition-all cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                Imprimir Recibo
+                Descargar Recibo (PDF)
               </button>
             </div>
           </motion.div>

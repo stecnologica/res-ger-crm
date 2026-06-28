@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import { Product, Client } from '../types';
 import { useCompany } from '../context/CompanyContext';
 import { formatCOP } from '../lib/formatCurrency';
+import jsPDF from 'jspdf';
+import * as htmlToImage from 'html-to-image';
 
 interface NewSaleProps {
   onCancel: () => void;
@@ -43,6 +45,10 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
   const [newCustEmail, setNewCustEmail] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustAddress, setNewCustAddress] = useState('');
+
+  // Mostrador manual fields (just for this sale)
+  const [manualPhone, setManualPhone] = useState('');
+  const [manualAddress, setManualAddress] = useState('');
 
   // Payment configuration
   const [discountPercent, setDiscountPercent] = useState(0); // 0, 5, 10, 15, 20
@@ -161,6 +167,8 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
     setDiscountPercent(0);
     setSelectedClient(null);
     setClientSearchText('');
+    setManualPhone('');
+    setManualAddress('');
   };
 
   // 5. Cart Financial Summary
@@ -248,8 +256,10 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
         discount: discountPercent,
         discountAmount: totals.discountAmount,
         total: totals.total,
-        customerName: selectedClient ? selectedClient.nombre : (clientSearchText || 'Venta Mostrador'),
-        paymentMethod
+        customerName: selectedClient ? selectedClient.nombre : clientSearchText || 'Mostrador',
+        customerPhone: selectedClient ? selectedClient.telefono : manualPhone,
+        customerAddress: selectedClient ? selectedClient.direccion : manualAddress,
+        paymentMethod,
       });
 
       // Reset
@@ -257,6 +267,8 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
       setDiscountPercent(0);
       setSelectedClient(null);
       setClientSearchText('');
+      setManualPhone('');
+      setManualAddress('');
       setPaymentMethod('efectivo');
 
     } catch (err: any) {
@@ -308,6 +320,157 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
       setShowNewCustomerModal(false);
     }
     setIsSubmitting(false);
+  };
+
+  const handlePrintPDF = async () => {
+    if (!completedSale || !activeCompany) return;
+    
+    try {
+      // Usamos jsPDF para dibujar exactamente el diseño del ticket, sin depender de librerías de canvas que fallan con CSS moderno.
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [80, 200] // Formato ticket (80mm ancho x 200mm alto)
+      });
+      
+      const width = doc.internal.pageSize.getWidth();
+      let y = 0;
+
+      // 1. Barra superior verde oscuro
+      doc.setFillColor(0, 108, 75); // #006c4b
+      doc.rect(0, y, width, 4, 'F');
+      y += 12;
+
+      // 2. Icono Check (Simulado con un círculo y texto)
+      doc.setDrawColor(0, 108, 75);
+      doc.setFillColor(255, 255, 255);
+      doc.setLineWidth(0.7);
+      doc.circle(width / 2, y, 4, 'FD');
+      doc.setTextColor(0, 108, 75);
+      doc.setFontSize(8);
+      doc.text('v', width / 2 - 1, y + 1.5); // check symbol aproximado
+      y += 10;
+
+      // 3. Título Principal
+      doc.setTextColor(25, 27, 37); // #191b25
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('¡Cobro Exitoso!', width / 2, y, { align: 'center' });
+      y += 5;
+
+      // 4. Subtítulo
+      doc.setTextColor(115, 118, 136); // text-gray-500
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text('Transacción registrada en la base de datos', width / 2, y, { align: 'center' });
+      y += 8;
+
+      // Línea punteada
+      const drawDashedLine = (yPos: number) => {
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.3);
+        doc.setLineDashPattern([1, 1], 0);
+        doc.line(5, yPos, width - 5, yPos);
+        doc.setLineDashPattern([], 0); // reset
+      };
+      
+      drawDashedLine(y);
+      y += 8;
+
+      // 5. Datos de la empresa y ticket
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('courier', 'bold');
+      doc.setFontSize(12);
+      doc.text((activeCompany.nombre || 'MI NEGOCIO').toUpperCase(), width / 2, y, { align: 'center' });
+      y += 5;
+      
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(8);
+      doc.text(`Fecha: ${completedSale.date}`, width / 2, y, { align: 'center' });
+      y += 4;
+      doc.text(`Ticket: #${completedSale.id.substring(0,8)}...`, width / 2, y, { align: 'center' });
+      y += 8;
+
+      drawDashedLine(y);
+      y += 6;
+
+      // 6. Encabezados de Tabla
+      doc.setFont('courier', 'bold');
+      doc.setFontSize(8);
+      doc.text('DESCRIPCIÓN', 5, y);
+      doc.text('CANT x PRECIO = TOTAL', width - 5, y, { align: 'right' });
+      y += 5;
+
+      // 7. Ítems
+      doc.setFont('courier', 'normal');
+      completedSale.items.forEach((item: any) => {
+        // Truncar nombre si es muy largo
+        let name = item.name;
+        if (name.length > 15) name = name.substring(0, 15) + '...';
+        
+        doc.text(name, 5, y);
+        const calc = `${item.quantity} x ${formatCOP(item.price)} = ${formatCOP(item.total)}`;
+        doc.text(calc, width - 5, y, { align: 'right' });
+        y += 5;
+      });
+
+      y += 3;
+      drawDashedLine(y);
+      y += 6;
+
+      // 8. Totales
+      doc.setFont('courier', 'bold');
+      
+      doc.setTextColor(100, 100, 100);
+      doc.text('Subtotal:', 5, y);
+      doc.setTextColor(0, 0, 0);
+      doc.text(formatCOP(completedSale.subtotal), width - 5, y, { align: 'right' });
+      y += 5;
+      
+      if (applyIva) {
+        doc.setTextColor(100, 100, 100);
+        doc.text(`IVA (${ivaRate}%):`, 5, y);
+        doc.setTextColor(0, 0, 0);
+        doc.text(formatCOP(completedSale.taxes), width - 5, y, { align: 'right' });
+        y += 5;
+      }
+      
+      if (completedSale.discount > 0) {
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Descuento (${completedSale.discount}%):`, 5, y);
+        doc.setTextColor(186, 26, 26); // text-[#ba1a1a]
+        doc.text(`-${formatCOP(completedSale.discountAmount)}`, width - 5, y, { align: 'right' });
+        doc.setTextColor(0, 0, 0);
+        y += 5;
+      }
+      
+      y += 2;
+      doc.setFontSize(10);
+      doc.text('TOTAL PAGADO:', 5, y);
+      doc.text(formatCOP(completedSale.total), width - 5, y, { align: 'right' });
+      y += 10;
+      
+      // 9. Info Final (Cliente, Pago)
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Cliente: ${completedSale.customerName}`, width / 2, y, { align: 'center' });
+      y += 4;
+      if (completedSale.customerPhone) {
+        doc.text(`Teléfono: ${completedSale.customerPhone}`, width / 2, y, { align: 'center' });
+        y += 4;
+      }
+      doc.text(`PAGO EN: ${completedSale.paymentMethod.toUpperCase()}`, width / 2, y, { align: 'center' });
+      y += 8;
+      
+      doc.setFont('courier', 'bold');
+      doc.text('*** GRACIAS POR SU COMPRA ***', width / 2, y, { align: 'center' });
+
+      doc.save(`Factura_${completedSale.id.substring(0,8)}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF", error);
+      alert("Hubo un error al generar el PDF.");
+    }
   };
 
   if (loading) {
@@ -492,28 +655,53 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
                 </button>
               </div>
               <div className="relative">
-                <span className="material-symbols-outlined text-gray-400 absolute left-2.5 top-2 text-sm">person_search</span>
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#737688] text-lg">person</span>
                 <input 
-                  type="text"
-                  placeholder="Escribe nombre o elige Mostrador..."
+                  type="text" 
                   value={clientSearchText}
                   onChange={(e) => {
                     setClientSearchText(e.target.value);
-                    setSelectedClient(null); // Clear selection if typing again
+                    if (selectedClient) setSelectedClient(null); // Unselect if they start typing
                     setShowClientDropdown(true);
                   }}
                   onFocus={() => setShowClientDropdown(true)}
-                  className="w-full bg-[#fbf8ff] border border-[#c3c5d9]/40 rounded-lg pl-8 pr-8 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-[#003ec7] transition-all"
+                  placeholder="Buscar cliente o escribir nombre (Mostrador)..."
+                  className="w-full bg-[#fbf8ff] border border-[#c3c5d9] rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#003ec7] transition-all font-medium text-[#191b25]"
                 />
                 {selectedClient && (
                   <button 
                     onClick={() => { setSelectedClient(null); setClientSearchText(''); }}
-                    className="absolute right-2 top-1.5 text-gray-400 hover:text-red-500 cursor-pointer"
+                    className="absolute right-2 top-3 text-gray-400 hover:text-red-500 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-sm">close</span>
                   </button>
                 )}
               </div>
+
+              {!selectedClient && clientSearchText && (
+                <div className="mt-3 grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl animate-fade-in">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Teléfono (Opcional)</label>
+                    <input
+                      type="text"
+                      value={manualPhone}
+                      onChange={(e) => setManualPhone(e.target.value)}
+                      placeholder="Para esta venta..."
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#003ec7]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Dirección (Opcional)</label>
+                    <input
+                      type="text"
+                      value={manualAddress}
+                      onChange={(e) => setManualAddress(e.target.value)}
+                      placeholder="Para esta venta..."
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#003ec7]"
+                    />
+                  </div>
+                </div>
+              )}
 
               {showClientDropdown && clientSearchText && !selectedClient && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto custom-scrollbar">
@@ -726,10 +914,12 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
         {/* MODAL: Printable Receipt Simulator */}
         {completedSale && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-            <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-[#c3c5d9]/40 relative overflow-hidden">
+            <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-[#c3c5d9]/40 relative overflow-hidden flex flex-col">
               
-              {/* Header Success Accent banner */}
-              <div className="absolute top-0 left-0 w-full h-1.5 bg-[#006c4b]"></div>
+              {/* Contenido a imprimir (ocultamos sombra aquí para el canvas) */}
+              <div id="receipt-content-to-print" className="bg-white relative">
+                {/* Header Success Accent banner */}
+                <div className="absolute top-0 left-0 w-full h-1.5 bg-[#006c4b]"></div>
 
               <div className="text-center pb-4 border-b border-dashed border-[#c3c5d9]/30">
                 <span className="material-symbols-outlined text-4xl text-[#006c4b] mb-1">check_circle</span>
@@ -783,29 +973,34 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
 
                 <div className="text-center text-[9px] text-[#434656] pt-2 space-y-1">
                   <div>Cliente: {completedSale.customerName}</div>
+                  {completedSale.customerPhone && <div>Teléfono: {completedSale.customerPhone}</div>}
                   <div className="uppercase">Pago en: {completedSale.paymentMethod}</div>
                   <div className="font-bold tracking-wider pt-2">*** GRACIAS POR SU COMPRA ***</div>
                 </div>
               </div>
+              {/* Fin de contenido a imprimir */}
+              </div>
 
-              <div className="flex gap-3 mt-4">
+              <div className="flex flex-col gap-2 mt-4">
                 <button 
                   onClick={() => {
-                    alert("Se ha enviado el ticket a la impresora configurada.");
+                    handlePrintPDF();
+                    setCompletedSale(null);
+                    onFinish();
                   }}
-                  className="w-1/2 py-2 border border-gray-300 text-gray-700 rounded-lg text-xs font-bold hover:bg-slate-50 flex items-center justify-center gap-1 cursor-pointer"
+                  className="w-full py-3 bg-[#003ec7] hover:bg-[#0052ff] text-white rounded-lg text-sm font-black hover:shadow transition-all text-center cursor-pointer flex items-center justify-center gap-2"
                 >
                   <span className="material-symbols-outlined text-sm">print</span>
-                  Imprimir
+                  Cerrar e Imprimir Factura (PDF)
                 </button>
                 <button 
                   onClick={() => {
                     setCompletedSale(null);
-                    onFinish(); // Go to history or clear view
+                    onFinish();
                   }}
-                  className="w-1/2 py-2 bg-[#003ec7] hover:bg-[#0052ff] text-white rounded-lg text-xs font-bold hover:shadow transition-all text-center cursor-pointer"
+                  className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold transition-all text-center cursor-pointer"
                 >
-                  Cerrar Ticket
+                  Solo Cerrar
                 </button>
               </div>
             </div>
