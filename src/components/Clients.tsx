@@ -1,430 +1,460 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Client } from '../types';
-import { 
-  UserPlus, Filter, Search, Edit2, Trash2, 
-  ChevronLeft, ChevronRight, TrendingUp, Loader2, Save, X 
-} from 'lucide-react';
-
 import { useCompany } from '../context/CompanyContext';
+import { formatCOP } from '../lib/formatCurrency';
 
 interface ClientsProps {
-  onAddClient: () => void;
+  onAddClient?: () => void; // Keep for backward compatibility in App.tsx
   user: User;
 }
 
-export const Clients: React.FC<ClientsProps> = ({ onAddClient, user }) => {
+interface ClientWithMetrics extends Client {
+  totalSpent: number;
+  transactionCount: number;
+}
+
+export const Clients: React.FC<ClientsProps> = ({ user }) => {
   const { activeCompany } = useCompany();
   const [clients, setClients] = useState<Client[]>([]);
+  const [sales, setSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Search and dynamic filters states
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCity, setSelectedCity] = useState('Todos');
-  const [selectedDomain, setSelectedDomain] = useState('Todos');
-  const [currentPage, setCurrentPage] = useState(1);
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Reset page on search or filter change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, selectedCity, selectedDomain]);
-
+  // Modal states
+  const [showModal, setShowModal] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [editNombre, setEditNombre] = useState('');
-  const [editEmail, setEditEmail] = useState('');
-  const [editTelefono, setEditTelefono] = useState('');
-  const [editDireccion, setEditDireccion] = useState('');
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Form fields
+  const [nombre, setNombre] = useState('');
+  const [email, setEmail] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [direccion, setDireccion] = useState('');
 
   useEffect(() => {
     if (activeCompany) {
-      fetchClients();
+      fetchData();
     }
   }, [activeCompany]);
 
-  const fetchClients = async () => {
+  const fetchData = async () => {
     if (!activeCompany) return;
     setLoading(true);
-    const { data, error } = await supabase
+
+    // 1. Fetch Clients
+    const { data: clientsData, error: clientsError } = await supabase
       .from('clientes')
       .select('*')
       .eq('company_id', activeCompany.id)
       .order('nombre', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching clients:', error);
-    } else {
-      setClients(data || []);
-    }
+    if (clientsError) console.error('Error fetching clients:', clientsError);
+    else setClients(clientsData || []);
+
+    // 2. Fetch Sales to calculate metrics
+    const { data: salesData, error: salesError } = await supabase
+      .from('ventas')
+      .select('cliente_id, total')
+      .eq('company_id', activeCompany.id);
+
+    if (salesError) console.error('Error fetching sales for metrics:', salesError);
+    else setSales(salesData || []);
+
     setLoading(false);
   };
 
-  const deleteClient = async (id: string) => {
-    if (!window.confirm('¿Estás seguro de que deseas eliminar este cliente?')) return;
+  // Combine clients with metrics
+  const clientsWithMetrics = useMemo<ClientWithMetrics[]>(() => {
+    const metricsMap: Record<string, { totalSpent: number; count: number }> = {};
+    
+    // Initialize map
+    clients.forEach(c => {
+      metricsMap[c.id] = { totalSpent: 0, count: 0 };
+    });
+
+    // Aggregate sales
+    sales.forEach(sale => {
+      if (sale.cliente_id && metricsMap[sale.cliente_id]) {
+        metricsMap[sale.cliente_id].totalSpent += sale.total;
+        metricsMap[sale.cliente_id].count += 1;
+      }
+    });
+
+    return clients.map(c => ({
+      ...c,
+      totalSpent: metricsMap[c.id]?.totalSpent || 0,
+      transactionCount: metricsMap[c.id]?.count || 0
+    }));
+  }, [clients, sales]);
+
+  // Filter clients
+  const filteredClients = useMemo(() => {
+    const term = searchQuery.toLowerCase().trim();
+    if (!term) return clientsWithMetrics;
+    
+    return clientsWithMetrics.filter(c => 
+      c.nombre.toLowerCase().includes(term) ||
+      (c.email && c.email.toLowerCase().includes(term)) ||
+      (c.telefono && c.telefono.toLowerCase().includes(term)) ||
+      (c.direccion && c.direccion.toLowerCase().includes(term))
+    );
+  }, [clientsWithMetrics, searchQuery]);
+
+  // Leaderboard (Top 10 Clients)
+  const topClients = [...clientsWithMetrics]
+    .sort((a, b) => b.totalSpent - a.totalSpent)
+    .slice(0, 10);
+
+  // Handlers
+  const handleOpenAdd = () => {
+    setEditingClient(null);
+    setNombre('');
+    setEmail('');
+    setTelefono('');
+    setDireccion('');
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (c: Client) => {
+    setEditingClient(c);
+    setNombre(c.nombre);
+    setEmail(c.email || '');
+    setTelefono(c.telefono || '');
+    setDireccion(c.direccion || '');
+    setShowModal(true);
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar al cliente "${name}"?`)) return;
 
     const { error } = await supabase
       .from('clientes')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('company_id', activeCompany.id);
 
     if (error) {
-      alert('Error al eliminar cliente');
+      alert('Error al eliminar cliente: ' + error.message);
     } else {
       setClients(clients.filter(c => c.id !== id));
     }
   };
 
-  const startEditing = (client: Client) => {
-    setEditingClient(client);
-    setEditNombre(client.nombre);
-    setEditEmail(client.email || '');
-    setEditTelefono(client.telefono || '');
-    setEditDireccion(client.direccion || '');
-  };
-
-  const handleUpdateClient = async () => {
-    if (!editingClient) return;
-    if (!editNombre.trim()) {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nombre.trim()) {
       alert("El nombre es obligatorio");
       return;
     }
-    setSavingEdit(true);
-    
-    const cleanEmail = editEmail.trim().toLowerCase() || null;
-    const cleanTelefono = editTelefono.trim() || null;
+    if (!activeCompany) return;
 
-    const { error } = await supabase
-      .from('clientes')
-      .update({
-        nombre: editNombre.trim(),
-        email: cleanEmail,
-        telefono: cleanTelefono,
-        direccion: editDireccion.trim()
-      })
-      .eq('id', editingClient.id);
+    setIsSubmitting(true);
+    const cleanEmail = email.trim().toLowerCase() || null;
+    const cleanTelefono = telefono.trim() || null;
 
-    if (error) {
-      console.error("Error al actualizar:", error);
-      if (error.code === '23505') {
-         alert("Error: Este número de teléfono o correo ya está registrado en tu empresa.");
-      } else {
-         alert("Error al actualizar el cliente.");
+    const payload = {
+      nombre: nombre.trim(),
+      email: cleanEmail,
+      telefono: cleanTelefono,
+      direccion: direccion.trim(),
+      company_id: activeCompany.id,
+      user_id: user.id
+    };
+
+    if (editingClient) {
+      const { data, error } = await supabase
+        .from('clientes')
+        .update(payload)
+        .eq('id', editingClient.id)
+        .eq('company_id', activeCompany.id)
+        .select();
+
+      if (error) {
+        if (error.code === '23505') alert("Error: Este número de teléfono o correo ya está registrado.");
+        else alert('Error al actualizar el cliente: ' + error.message);
+      } else if (data) {
+        setClients(clients.map(c => c.id === editingClient.id ? data[0] : c));
+        setShowModal(false);
       }
     } else {
-      setClients(clients.map(c => c.id === editingClient.id ? { ...c, nombre: editNombre.trim(), email: cleanEmail, telefono: cleanTelefono, direccion: editDireccion.trim() } : c));
-      setEditingClient(null);
+      const { data, error } = await supabase
+        .from('clientes')
+        .insert([payload])
+        .select();
+
+      if (error) {
+        if (error.code === '23505') alert("Error: Este número de teléfono o correo ya está registrado.");
+        else alert('Error al registrar el cliente: ' + error.message);
+      } else if (data) {
+        setClients([...clients, data[0]]);
+        setShowModal(false);
+      }
     }
-    setSavingEdit(false);
+    setIsSubmitting(false);
   };
 
-  // Extract unique cities (last segment of the address after a comma, or the full address)
-  const cities = Array.from(new Set(clients.map(c => {
-    if (!c.direccion) return '';
-    const parts = c.direccion.split(',');
-    return parts[parts.length - 1].trim();
-  }).filter(Boolean))).sort();
-
-  // Extract unique email domains
-  const domains = Array.from(new Set(clients.map(c => {
-    if (!c.email) return '';
-    const parts = c.email.split('@');
-    return parts[1] ? parts[1].trim() : '';
-  }).filter(Boolean))).sort();
-
-  // Filter clients based on name, phone, address, selected city, and selected email domain
-  const filteredClients = clients.filter((client) => {
-    const term = searchTerm.toLowerCase().trim();
-    const matchesSearch = !term || 
-      (client.nombre || '').toLowerCase().includes(term) ||
-      (client.telefono || '').toLowerCase().includes(term) ||
-      (client.direccion || '').toLowerCase().includes(term);
-
-    let matchesCity = true;
-    if (selectedCity !== 'Todos') {
-      const clientCity = client.direccion ? client.direccion.split(',').pop()?.trim() : '';
-      matchesCity = clientCity === selectedCity;
-    }
-
-    let matchesDomain = true;
-    if (selectedDomain !== 'Todos') {
-      const clientDomain = client.email ? client.email.split('@')[1]?.trim() : '';
-      matchesDomain = clientDomain === selectedDomain;
-    }
-
-    return matchesSearch && matchesCity && matchesDomain;
-  });
-
-  const ITEMS_PER_PAGE = 10;
-  const totalPages = Math.ceil(filteredClients.length / ITEMS_PER_PAGE);
-  const paginatedClients = filteredClients.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
+  if (loading) {
+    return <div className="p-10 text-center text-[#434656] mt-16">Cargando base de clientes...</div>;
+  }
 
   return (
-    <div className="p-8 max-w-[1440px] mx-auto mt-16 relative">
-      {editingClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-navy/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="text-xl font-bold text-[#091426]">Editar Cliente</h3>
-              <button onClick={() => setEditingClient(null)} className="text-slate-400 hover:text-rose-500 transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nombre Completo</label>
-                <input 
-                  type="text" 
-                  value={editNombre}
-                  onChange={(e) => setEditNombre(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#091426]/20 focus:border-[#091426] outline-none transition-all"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email</label>
-                <input 
-                  type="email" 
-                  value={editEmail}
-                  onChange={(e) => setEditEmail(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#091426]/20 focus:border-[#091426] outline-none transition-all"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Teléfono</label>
-                <input 
-                  type="tel" 
-                  value={editTelefono}
-                  onChange={(e) => setEditTelefono(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-[#091426]/20 focus:border-[#091426] outline-none transition-all"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Dirección</label>
-                <input 
-                  type="text" 
-                  value={editDireccion}
-                  onChange={(e) => setEditDireccion(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#091426]/20 focus:border-[#091426] outline-none transition-all"
-                />
-              </div>
-            </div>
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-              <button 
-                onClick={() => setEditingClient(null)}
-                className="px-4 py-2 text-slate-600 font-bold text-xs uppercase hover:bg-slate-200 rounded-lg transition-colors"
-                disabled={savingEdit}
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={handleUpdateClient}
-                disabled={savingEdit}
-                className="px-6 py-2 bg-gradient-to-r from-brand-primary to-brand-tertiary text-white font-bold text-xs uppercase rounded-lg hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-70 shadow-lg shadow-brand-primary/20"
-              >
-                {savingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Guardar
-              </button>
-            </div>
+    <div className="p-8 max-w-[1440px] mx-auto mt-16 bg-[#f8f9fc] min-h-screen">
+      <div className="space-y-6">
+        
+        {/* Title header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="font-display text-2xl font-black text-[#191b25] tracking-tight">Cartera de Clientes</h1>
+            <p className="text-xs text-[#434656] mt-0.5">Administra tu base de datos y analiza el valor y lealtad de tus compradores.</p>
           </div>
-        </div>
-      )}
-
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
-        <div>
-          <h2 className="text-3xl font-bold text-[#091426] tracking-tight">Gestión de Clientes</h2>
-          <p className="text-slate-500 font-medium mt-1">Administra y organiza tu base de datos de clientes corporativos.</p>
-        </div>
-        <button 
-          onClick={onAddClient}
-          className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-primary to-brand-tertiary text-white px-6 py-2.5 rounded-lg font-bold text-sm shadow-lg shadow-brand-primary/20 hover:opacity-90 transition-all flex items-center justify-center"
-        >
-          <UserPlus className="w-4 h-4" />
-          Añadir Cliente
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        {[
-          { label: 'Total Clientes', val: clients.length.toString(), trend: '+0% este mes' },
-          { label: 'Clientes Activos', val: clients.length.toString(), sub: '100% de retención' },
-          { label: 'Nuevos (7d)', val: '0', sub: 'Crecimiento orgánico' },
-          { label: 'Tasa de Conversión', val: '0%', progress: 0 },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm relative overflow-hidden group">
-            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-2">{stat.label}</p>
-            <h3 className="text-2xl font-black text-[#091426]">{stat.val}</h3>
-            {stat.trend && (
-              <div className="flex items-center gap-1 mt-2 text-emerald-600 font-bold text-[10px] uppercase">
-                <TrendingUp size={12} />
-                <span>{stat.trend}</span>
-              </div>
-            )}
-            {stat.sub && (
-              <p className="text-slate-400 text-[10px] mt-2 italic font-medium uppercase tracking-tighter">{stat.sub}</p>
-            )}
-            {stat.progress !== undefined && (
-              <div className="w-full bg-slate-100 h-1 rounded-full mt-3 overflow-hidden">
-                <div className="bg-brand-primary h-full" style={{ width: `${stat.progress}%` }}></div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Search by Name, Phone, or Address */}
-        <div className="flex flex-1 items-center gap-2 max-w-md bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, teléfono o dirección..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-transparent text-sm text-[#091426] outline-none placeholder:text-slate-400"
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="text-slate-400 hover:text-rose-500 transition-colors cursor-pointer">
-              <X className="w-4 h-4" />
-            </button>
-          )}
+          <button
+            onClick={handleOpenAdd}
+            className="bg-[#003ec7] hover:bg-[#0052ff] text-white px-4 py-2.5 rounded-lg font-display text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-sm">person_add</span>
+            Registrar Cliente
+          </button>
         </div>
 
-        {/* Dynamic Filters using real table data */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Filter className="w-5 h-5 text-slate-400" />
-            <span className="text-sm font-bold text-slate-700">Filtrar por:</span>
+        {/* Search */}
+        <div className="bg-white p-4 rounded-xl border border-[#c3c5d9]/30 shadow-xs flex flex-col md:flex-row gap-4 justify-between items-center">
+          <div className="relative w-full md:max-w-md">
+            <span className="material-symbols-outlined text-[#737688] absolute left-3 top-2.5 text-lg">search</span>
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar por nombre, teléfono, email..."
+              className="w-full bg-[#fbf8ff] border border-[#c3c5d9]/50 rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-[#003ec7] transition-all"
+            />
           </div>
-          <div className="flex flex-wrap gap-2">
-            {/* Filter by City */}
-            <select
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider rounded-full px-4 py-1.5 focus:ring-[#091426]/10 focus:border-[#091426] cursor-pointer"
-            >
-              <option value="Todos">Ciudad: Todos</option>
-              {cities.map((city) => (
-                <option key={city} value={city}>{city}</option>
-              ))}
-            </select>
-
-            {/* Filter by Email Domain */}
-            <select
-              value={selectedDomain}
-              onChange={(e) => setSelectedDomain(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider rounded-full px-4 py-1.5 focus:ring-[#091426]/10 focus:border-[#091426] cursor-pointer"
-            >
-              <option value="Todos">Dominio: Todos</option>
-              {domains.map((domain) => (
-                <option key={domain} value={domain}>{domain}</option>
-              ))}
-            </select>
+          <div className="text-xs font-bold text-gray-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
+            Total Registrados: {clients.length}
           </div>
         </div>
-      </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="p-20 flex justify-center items-center">
-              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+        {/* Grid: Left - Clients Table, Right - Leaderboard */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* Left: Complete Clients Table */}
+          <div className="lg:col-span-8 bg-white rounded-xl border border-[#c3c5d9]/30 shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-gray-100 bg-[#fbf8ff]">
+              <h3 className="font-display font-bold text-gray-900 text-sm">Directorio General</h3>
             </div>
-          ) : (
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-200">
-                  {['Nombre', 'Email', 'Teléfono', 'Dirección', 'Acciones'].map((h) => (
-                    <th key={h} className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-sans">
-                {paginatedClients.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-slate-400 text-sm italic">
-                      No se encontraron clientes.
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[#c3c5d9]/30 text-[9px] font-bold uppercase tracking-wider text-gray-500 font-display bg-slate-50/50">
+                    <th className="p-4">Cliente</th>
+                    <th className="p-4">Contacto</th>
+                    <th className="p-4 text-center">Frecuencia</th>
+                    <th className="p-4 text-right">Monto Consumido</th>
+                    <th className="p-4 text-right">Acciones</th>
                   </tr>
-                ) : (
-                  paginatedClients.map((client) => (
-                    <tr key={client.id} className="hover:bg-slate-50/50 transition-colors group">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-[#091426] font-bold text-xs uppercase tracking-tight">
-                            {client.nombre.charAt(0)}
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-slate-900">{client.nombre}</span>
-                          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-xs">
+                  {filteredClients.map(client => (
+                    <tr key={client.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="p-4 flex items-center gap-2.5">
+                        <div className="w-8 h-8 bg-slate-100 text-[#003ec7] rounded-full flex items-center justify-center font-display font-black text-xs uppercase tracking-tight">
+                          {client.nombre.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="font-bold text-gray-900">{client.nombre}</div>
+                          <div className="text-[10px] text-gray-400 truncate max-w-[150px]">{client.direccion || 'Sin dirección'}</div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-xs text-slate-600 font-medium">{client.email}</td>
-                      <td className="px-6 py-4 text-xs text-slate-600 font-mono">{client.telefono}</td>
-                      <td className="px-6 py-4 text-xs text-slate-600">{client.direccion}</td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                          <button 
-                            onClick={() => startEditing(client)}
-                            className="p-1.5 text-slate-400 hover:text-[#091426] hover:bg-slate-100 rounded-md transition-all"
+                      <td className="p-4">
+                        <div className="font-mono text-gray-700">{client.telefono || 'N/A'}</div>
+                        <div className="text-[10px] text-gray-400">{client.email || 'N/A'}</div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-display ${
+                          client.transactionCount > 5 
+                            ? 'bg-emerald-100 text-emerald-800' 
+                            : client.transactionCount > 0
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {client.transactionCount} compras
+                        </span>
+                      </td>
+                      <td className="p-4 text-right font-mono font-black text-gray-900">
+                        {formatCOP(client.totalSpent)}
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenEdit(client)}
+                            className="w-7 h-7 bg-slate-50 hover:bg-[#dde1ff] text-[#434656] hover:text-[#003ec7] rounded-md flex items-center justify-center border border-gray-100 cursor-pointer"
+                            title="Editar Cliente"
                           >
-                            <Edit2 className="w-4 h-4" />
+                            <span className="material-symbols-outlined text-sm">edit</span>
                           </button>
-                          <button 
-                            onClick={() => deleteClient(client.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-all"
+                          <button
+                            onClick={() => handleDelete(client.id, client.nombre)}
+                            className="w-7 h-7 bg-red-50 hover:bg-[#ffdad6] text-red-600 hover:text-[#ba1a1a] rounded-md flex items-center justify-center border border-transparent cursor-pointer"
+                            title="Eliminar Cliente"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <span className="material-symbols-outlined text-sm">delete</span>
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          )}
-        </div>
-        <div className="px-6 py-4 bg-slate-50/30 border-t border-slate-100 flex items-center justify-between">
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-            Mostrando <span className="text-[#091426]">{filteredClients.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1}</span> a <span className="text-[#091426]">{Math.min(currentPage * ITEMS_PER_PAGE, filteredClients.length)}</span> de <span className="text-[#091426]">{filteredClients.length}</span> clientes
-          </p>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
-              className="p-1.5 rounded border border-slate-200 text-slate-400 hover:bg-white hover:text-brand-navy transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <div className="flex gap-1">
-              {totalPages > 0 && Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={`w-7 h-7 flex items-center justify-center rounded text-[10px] font-bold transition-all cursor-pointer ${
-                    currentPage === page
-                      ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/20'
-                      : 'border border-slate-200 text-slate-600 hover:bg-white'
-                  }`}
-                >
-                  {page}
-                </button>
-              ))}
+                  ))}
+                  {filteredClients.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-gray-400 font-medium italic">
+                        No se encontraron clientes.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-            <button 
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages || totalPages === 0}
-              className="p-1.5 rounded border border-slate-200 text-slate-400 hover:bg-white hover:text-brand-navy transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
           </div>
+
+          {/* Right: Best Clients Leaderboard */}
+          <div className="lg:col-span-4 bg-white rounded-xl border border-[#c3c5d9]/30 shadow-xs p-5 space-y-4">
+            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
+              <span className="material-symbols-outlined text-amber-500" style={{ fontVariationSettings: "'FILL' 1" }}>diamond</span>
+              <div>
+                <h3 className="font-display font-black text-gray-900 text-sm">Mejores Clientes (VIP)</h3>
+                <p className="text-[10px] text-gray-500">Quienes más han invertido en tu negocio</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 custom-scrollbar overflow-y-auto max-h-[500px] pr-1">
+              {topClients.map((client, idx) => (
+                <div key={client.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 relative overflow-hidden">
+                  
+                  {idx === 0 && client.totalSpent > 0 && (
+                    <div className="absolute left-0 top-0 h-full w-1.5 bg-amber-500"></div>
+                  )}
+
+                  <div className="flex items-center gap-3 pl-1">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center font-display text-xs font-black ${
+                      idx === 0 && client.totalSpent > 0
+                        ? 'bg-amber-100 text-amber-600' 
+                        : idx === 1 
+                          ? 'bg-slate-200 text-slate-600' 
+                          : idx === 2
+                            ? 'bg-orange-100 text-orange-700'
+                            : 'bg-gray-100 text-gray-400'
+                    }`}>
+                      {idx + 1}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-gray-900 flex items-center gap-1.5 truncate max-w-[120px]">
+                        {client.nombre}
+                      </div>
+                      <span className="text-[9px] text-gray-500 font-semibold font-display">{client.transactionCount} visitas</span>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-xs font-black text-gray-900">{formatCOP(client.totalSpent)}</div>
+                    <span className="text-[8px] text-emerald-600 font-bold font-display uppercase tracking-wider">Aportado</span>
+                  </div>
+                </div>
+              ))}
+              {topClients.length === 0 && (
+                <p className="text-xs text-center text-gray-400 italic">No hay registros de ventas para clasificar.</p>
+              )}
+            </div>
+          </div>
+
         </div>
+
+        {/* CREATE / EDIT CLIENT MODAL */}
+        {showModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#c3c5d9]/40">
+              <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
+                <h3 className="font-display font-extrabold text-[#191b25] text-sm">
+                  {editingClient ? 'Editar Ficha del Cliente' : 'Registrar Nuevo Cliente'}
+                </h3>
+                <button 
+                  onClick={() => setShowModal(false)}
+                  className="text-gray-400 hover:text-gray-600 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#434656] mb-1 font-display">Nombre Completo / Empresa *</label>
+                  <input 
+                    type="text"
+                    required
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    placeholder="ej. Juan Carlos López"
+                    className="w-full bg-[#fbf8ff] border border-[#c3c5d9]/50 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#003ec7]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#434656] mb-1 font-display">Número de Teléfono</label>
+                  <input 
+                    type="tel"
+                    value={telefono}
+                    onChange={(e) => setTelefono(e.target.value)}
+                    placeholder="ej. +57 300 000 0000"
+                    className="w-full bg-[#fbf8ff] border border-[#c3c5d9]/50 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#003ec7] font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#434656] mb-1 font-display">Correo Electrónico (Email)</label>
+                  <input 
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="ej. correo@empresa.com"
+                    className="w-full bg-[#fbf8ff] border border-[#c3c5d9]/50 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#003ec7]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#434656] mb-1 font-display">Dirección de Entrega / Facturación</label>
+                  <input 
+                    type="text"
+                    value={direccion}
+                    onChange={(e) => setDireccion(e.target.value)}
+                    placeholder="ej. Calle 123 #45-67, Ciudad"
+                    className="w-full bg-[#fbf8ff] border border-[#c3c5d9]/50 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#003ec7]"
+                  />
+                </div>
+
+                <div className="pt-4 flex gap-3 border-t border-gray-100">
+                  <button 
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    disabled={isSubmitting}
+                    className="w-1/2 py-2.5 border border-[#c3c5d9] text-[#434656] rounded-xl text-xs font-bold hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-1/2 py-2.5 bg-[#003ec7] hover:bg-[#0052ff] text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50"
+                  >
+                    {isSubmitting ? 'Guardando...' : editingClient ? 'Guardar Cambios' : 'Registrar Cliente'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
 };
-

@@ -18,18 +18,21 @@ import {
   Loader2,
   AlertCircle,
   HelpCircle,
-  MessageSquare
+  MessageSquare,
+  Package
 } from 'lucide-react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Screen } from '../types';
+import { useCompany } from '../context/CompanyContext';
+import { INDUSTRIES, INITIAL_PRODUCTS_BY_INDUSTRY } from '../lib/initialData';
 
 interface SettingsProps {
   user: SupabaseUser;
   onNavigate: (screen: Screen) => void;
   isAdmin?: boolean;
-  activeTab: 'profile' | 'taxes' | 'support';
-  onTabChange: (tab: 'profile' | 'taxes' | 'support') => void;
+  activeTab: 'profile' | 'taxes' | 'support' | 'database';
+  onTabChange: (tab: 'profile' | 'taxes' | 'support' | 'database') => void;
 }
 
 export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin, activeTab, onTabChange }) => {
@@ -44,8 +47,41 @@ export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin, a
   const [ivaRate, setIvaRate] = useState(Number(localStorage.getItem('resger_iva_rate') || '19'));
   const [defaultIvaEnabled, setDefaultIvaEnabled] = useState(localStorage.getItem('resger_iva_enabled') !== 'false');
 
+  const { activeCompany } = useCompany();
+  const [selectedDatabaseIndustry, setSelectedDatabaseIndustry] = useState('cafeteria');
+  const [isLoadingDemo, setIsLoadingDemo] = useState(false);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
+  };
+
+  const handleLoadDemoData = async () => {
+    if (!activeCompany || !user || !isAdmin) return;
+    setIsLoadingDemo(true);
+    setMessage(null);
+    try {
+      const productsToInsert = INITIAL_PRODUCTS_BY_INDUSTRY[selectedDatabaseIndustry].map((p: any) => ({
+        company_id: activeCompany.id,
+        user_id: user.id,
+        nombre: p.name,
+        descripcion: p.description,
+        precio: p.price,
+        costo: p.cost,
+        stock: p.stock,
+        stock_minimo: p.minStock,
+        categoria: p.category
+      }));
+
+      const { error } = await supabase.from('productos').insert(productsToInsert);
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: 'Productos de demostración agregados correctamente al catálogo.' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || 'Error al cargar los productos de demostración.' });
+    } finally {
+      setIsLoadingDemo(false);
+    }
   };
 
   const handleCountryChange = (c: string) => {
@@ -175,10 +211,24 @@ export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin, a
             <ChevronRight className="w-4 h-4 text-indigo-400" />
           </button>
 
+          {/* Database and System tab */}
+          <button
+            onClick={() => onTabChange('database')}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-bold transition-all border ${activeTab === 'database'
+                ? 'bg-white border-slate-200 text-[#091426] shadow-sm'
+                : 'border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+          >
+            <div className="flex items-center gap-3">
+              <Database className="w-4 h-4" />
+              <span>Base de Datos</span>
+            </div>
+            {activeTab === 'database' && <div className="w-1.5 h-1.5 rounded-full bg-[#091426]" />}
+          </button>
+
           {[
             { label: 'Notificaciones', icon: Bell },
             { label: 'Seguridad', icon: Shield },
-            { label: 'Base de Datos', icon: Database },
             { label: 'Facturación', icon: CreditCard },
           ].map((item) => (
             <button
@@ -544,6 +594,66 @@ export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin, a
                     >
                       LinkedIn
                     </a>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Database management settings */}
+          {activeTab === 'database' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden"
+            >
+              <div className="p-8 border-b border-slate-100">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                    <Database className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-[#091426]">Base de Datos e Inventario</h3>
+                    <p className="text-sm text-slate-500 font-medium">Gestiona tu catálogo de productos y registros iniciales</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-8 space-y-8">
+                <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl">
+                  <h4 className="font-bold text-[#091426] mb-2 flex items-center gap-2">
+                    <Package className="w-4 h-4 text-emerald-600" />
+                    Cargar Catálogo de Demostración
+                  </h4>
+                  <p className="text-sm text-slate-500 mb-6">
+                    Agrega productos de ejemplo según el sector comercial de tu negocio. Esto inyectará categorías y productos base a tu empresa actual, los cuales luego podrás editar o eliminar a tu gusto.
+                  </p>
+
+                  <div className="space-y-4 max-w-sm">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Sector Comercial</label>
+                      <select
+                        value={selectedDatabaseIndustry}
+                        onChange={(e) => setSelectedDatabaseIndustry(e.target.value)}
+                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none font-bold focus:border-[#091426]"
+                      >
+                        {INDUSTRIES.map(ind => (
+                          <option key={ind.id} value={ind.id}>{ind.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={handleLoadDemoData}
+                      disabled={isLoadingDemo || !isAdmin}
+                      className="w-full px-6 py-3 bg-[#091426] text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg hover:shadow-[#091426]/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:pointer-events-none cursor-pointer"
+                    >
+                      {isLoadingDemo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                      {isLoadingDemo ? 'Inyectando datos...' : 'Cargar Productos'}
+                    </button>
+                    {!isAdmin && (
+                      <p className="text-xs text-rose-500 font-medium text-center">Solo los administradores de la empresa pueden realizar esta acción.</p>
+                    )}
                   </div>
                 </div>
               </div>

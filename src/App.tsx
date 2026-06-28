@@ -25,6 +25,7 @@ import { supabase } from './lib/supabase';
 import { useEffect } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { CompanyProvider, useCompany } from './context/CompanyContext';
+import { INDUSTRIES, INITIAL_PRODUCTS_BY_INDUSTRY } from './lib/initialData';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -78,14 +79,16 @@ function AppContent({ session }: { session: Session | null }) {
   const [prevScreen, setPrevScreen] = useState<Screen | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
-  const [settingsActiveTab, setSettingsActiveTab] = useState<'profile' | 'taxes' | 'support'>('profile');
+  const [settingsActiveTab, setSettingsActiveTab] = useState<'profile' | 'taxes' | 'support' | 'database'>('profile');
   const { activeCompany, memberships, loading: companyLoading, setActiveCompany, activeMembership } = useCompany();
 
   // Hooks para creación de empresa (DEBEN estar aquí arriba)
   const [newCompanyName, setNewCompanyName] = useState('');
+  const [selectedIndustry, setSelectedIndustry] = useState('cafeteria');
+  const [loadDemoProducts, setLoadDemoProducts] = useState(true);
   const [creating, setCreating] = useState(false);
 
-  const navigate = (newScreen: Screen, initialTab?: 'profile' | 'taxes' | 'support') => {
+  const navigate = (newScreen: Screen, initialTab?: 'profile' | 'taxes' | 'support' | 'database') => {
     setPrevScreen(screen);
     setScreen(newScreen);
     setIsSidebarOpen(false);
@@ -115,6 +118,26 @@ function AppContent({ session }: { session: Session | null }) {
         }]);
 
       if (memberError) throw memberError;
+
+      if (loadDemoProducts) {
+        const productsToInsert = INITIAL_PRODUCTS_BY_INDUSTRY[selectedIndustry].map(p => ({
+          company_id: companyData.id,
+          user_id: session.user.id,
+          nombre: p.name,
+          descripcion: p.description,
+          precio: p.price,
+          costo: p.cost,
+          stock: p.stock,
+          stock_minimo: p.minStock,
+          categoria: p.category
+        }));
+
+        const { error: productsError } = await supabase.from('productos').insert(productsToInsert);
+        if (productsError) {
+          console.error('Error inserting initial products', productsError);
+        }
+      }
+
       window.location.reload(); 
     } catch (err) {
       console.error('Error creating company:', err);
@@ -159,6 +182,33 @@ function AppContent({ session }: { session: Session | null }) {
                 className="w-full mt-1 px-4 py-3 bg-[#F1F5F9] border-b border-b-[#E2E8F0] focus:border-b-brand-primary rounded-t-md text-sm outline-none transition-all text-brand-navy placeholder:text-outline/50"
               />
             </div>
+            
+            <div className="text-left mt-2">
+              <label className="text-[10px] font-mono text-outline uppercase tracking-widest ml-1">Sector Comercial</label>
+              <select 
+                value={selectedIndustry}
+                onChange={(e) => setSelectedIndustry(e.target.value)}
+                className="w-full mt-1 px-4 py-3 bg-[#F1F5F9] border-b border-b-[#E2E8F0] focus:border-b-brand-primary rounded-t-md text-sm outline-none transition-all text-brand-navy"
+              >
+                {INDUSTRIES.map(ind => (
+                  <option key={ind.id} value={ind.id}>{ind.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 mt-4 mb-2 text-left">
+              <input 
+                type="checkbox" 
+                id="loadDemo" 
+                checked={loadDemoProducts}
+                onChange={(e) => setLoadDemoProducts(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary cursor-pointer accent-[#003ec7]"
+              />
+              <label htmlFor="loadDemo" className="text-xs text-brand-navy font-medium cursor-pointer select-none">
+                Cargar categorías y productos de demostración
+              </label>
+            </div>
+
             <button 
               onClick={handleCreateCompany}
               disabled={creating || !newCompanyName}

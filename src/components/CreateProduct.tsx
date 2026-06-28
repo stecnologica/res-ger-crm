@@ -23,12 +23,27 @@ export const CreateProduct: React.FC<CreateProductProps> = ({ onCancel, onSave, 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
 
+  const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  const maxImageSize = 5 * 1024 * 1024;
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
+    if (!file) return;
+
+    if (!allowedImageTypes.includes(file.type)) {
+      alert('Formato no permitido. Usa JPG, PNG o WEBP.');
+      e.target.value = '';
+      return;
     }
+
+    if (file.size > maxImageSize) {
+      alert('La imagen supera el tamaño máximo de 5MB.');
+      e.target.value = '';
+      return;
+    }
+
+    setImageFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
   };
 
   const handleSave = async () => {

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useCompany } from '../context/CompanyContext';
+import { formatCOP } from '../lib/formatCurrency';
 import { Building } from 'lucide-react';
 
 interface TopBarProps {
@@ -226,7 +227,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick, onNavigate, user })
                                 </p>
                               </div>
                               <div className="text-right shrink-0">
-                                <p className="text-xs font-black text-[#091426] group-hover:text-white font-mono">${product.precio.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                                <p className="text-xs font-black text-[#091426] group-hover:text-white font-mono">{formatCOP(product.precio)}</p>
                                 <p className="text-[8px] text-slate-400 group-hover:text-slate-300 font-bold uppercase tracking-tighter">Precio Unitario</p>
                               </div>
                             </button>

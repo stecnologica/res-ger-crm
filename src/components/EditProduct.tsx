@@ -26,12 +26,27 @@ export const EditProduct: React.FC<EditProductProps> = ({ product, onCancel, onS
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState(product.imagen_url || '');
 
+  const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  const maxImageSize = 5 * 1024 * 1024;
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
+    if (!file) return;
+
+    if (!allowedImageTypes.includes(file.type)) {
+      alert('Formato no permitido. Usa JPG, PNG o WEBP.');
+      e.target.value = '';
+      return;
     }
+
+    if (file.size > maxImageSize) {
+      alert('La imagen supera el tamaño máximo de 5MB.');
+      e.target.value = '';
+      return;
+    }
+
+    setImageFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
   };
 
   const handleUpdate = async () => {
@@ -72,7 +87,8 @@ export const EditProduct: React.FC<EditProductProps> = ({ product, onCancel, onS
           categoria: categoria || null,
           imagen_url: finalImageUrl || null
         })
-        .eq('id', product.id);
+        .eq('id', product.id)
+        .eq('company_id', activeCompany.id);
 
       if (error) throw error;
       onSave();
