@@ -34,6 +34,10 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todos');
   
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
+  
   // Client selection with search text
   const [clientSearchText, setClientSearchText] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -97,6 +101,13 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
       return matchesCategory && matchesSearch;
     });
   }, [products, selectedCategory, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage));
+  const paginatedProducts = filteredProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // 3. Client Search Dropdown
   const clientSuggestions = useMemo(() => {
@@ -523,8 +534,8 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
           </div>
 
           {/* Products Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 custom-scrollbar max-h-[600px] overflow-y-auto pr-1 pb-4">
-            {filteredProducts.map(prod => {
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pb-2 min-h-[400px] content-start">
+            {paginatedProducts.map(prod => {
               const pStock = prod.stock || 0;
               const pMinStock = prod.stock_minimo || 10;
               const isOutOfStock = pStock <= 0;
@@ -579,6 +590,31 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
               </div>
             )}
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-2 bg-white p-3 rounded-xl border border-[#c3c5d9]/30">
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-50 border border-slate-200 text-[#434656] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 flex items-center gap-1 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">chevron_left</span>
+                Anterior
+              </button>
+              <span className="text-xs font-bold text-[#434656] bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
+                Página {currentPage} de {totalPages}
+              </span>
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-50 border border-slate-200 text-[#434656] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 flex items-center gap-1 cursor-pointer"
+              >
+                Siguiente
+                <span className="material-symbols-outlined text-sm">chevron_right</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* RIGHT: Active Cart Checkout Panel (5 cols) */}
