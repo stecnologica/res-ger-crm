@@ -252,10 +252,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick, onNavigate, user })
       
       <div className="flex items-center gap-6 text-slate-500">
         <div className="flex items-center gap-4">
-          <button className="relative hover:text-slate-900 transition-opacity transition-colors">
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-0 right-0 w-2 h-2 bg-[#ba1a1a] rounded-full border-2 border-white"></span>
-          </button>
           <button 
             onClick={() => onNavigate('Settings', 'support')}
             className="hover:text-slate-900 transition-colors"
