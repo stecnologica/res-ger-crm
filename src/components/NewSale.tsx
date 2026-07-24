@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Product, Client } from '../types';
@@ -6,6 +6,7 @@ import { useCompany } from '../context/CompanyContext';
 import { formatCOP } from '../lib/formatCurrency';
 import jsPDF from 'jspdf';
 import * as htmlToImage from 'html-to-image';
+import { AnimatePresence, motion } from 'motion/react';
 
 interface NewSaleProps {
   onCancel: () => void;
@@ -34,6 +35,10 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todos');
   
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
+  
   // Client selection with search text
   const [clientSearchText, setClientSearchText] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -47,12 +52,16 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
   const [newCustAddress, setNewCustAddress] = useState('');
 
   // Mostrador manual fields (just for this sale)
+  const [clientAssignMode, setClientAssignMode] = useState<'registered' | 'mostrador'>('registered');
+  const [counterName, setCounterName] = useState('');
+  const [isCounterConfirmed, setIsCounterConfirmed] = useState(false);
   const [manualPhone, setManualPhone] = useState('');
   const [manualAddress, setManualAddress] = useState('');
 
   // Payment configuration
   const [discountPercent, setDiscountPercent] = useState(0); // 0, 5, 10, 15, 20
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
+  const [observaciones, setObservaciones] = useState('');
 
   // Tax / IVA settings state
   const [applyIva] = useState(localStorage.getItem('resger_iva_enabled') !== 'false');
@@ -61,6 +70,28 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
   // Receipt Modal
   const [completedSale, setCompletedSale] = useState<any | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const cartRef = useRef<HTMLDivElement>(null);
+  const [isCartVisible, setIsCartVisible] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsCartVisible(entry.isIntersecting);
+      },
+      { threshold: 0 } // Se activa de inmediato cuando cualquier píxel entra en el viewport
+    );
+
+    if (cartRef.current) {
+      observer.observe(cartRef.current);
+    }
+
+    return () => {
+      if (cartRef.current) {
+        observer.unobserve(cartRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (activeCompany) {
@@ -97,6 +128,13 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
       return matchesCategory && matchesSearch;
     });
   }, [products, selectedCategory, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage));
+  const paginatedProducts = filteredProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // 3. Client Search Dropdown
   const clientSuggestions = useMemo(() => {
@@ -198,13 +236,35 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
     setIsSubmitting(true);
 
     try {
+      // Determine final customer details
+      let finalCustomerName = 'Mostrador';
+      let finalCustomerPhone: string | null = null;
+      let finalCustomerAddress: string | null = null;
+
+      if (selectedClient) {
+        finalCustomerName = selectedClient.nombre;
+        finalCustomerPhone = selectedClient.telefono || null;
+        finalCustomerAddress = selectedClient.direccion || null;
+      } else if (isCounterConfirmed && counterName.trim()) {
+        finalCustomerName = counterName.trim();
+        finalCustomerPhone = manualPhone.trim() || null;
+        finalCustomerAddress = manualAddress.trim() || null;
+      } else if (clientSearchText.trim()) {
+        finalCustomerName = clientSearchText.trim();
+        finalCustomerPhone = manualPhone.trim() || null;
+        finalCustomerAddress = manualAddress.trim() || null;
+      }
+
       // 1. Insert Sale
       const salePayload = {
         cliente_id: selectedClient ? selectedClient.id : null,
         total: totals.total,
         user_id: user.id,
         company_id: activeCompany.id,
-        manual_name: selectedClient ? null : clientSearchText || 'Mostrador',
+        manual_name: selectedClient ? null : finalCustomerName,
+        manual_phone: selectedClient ? null : finalCustomerPhone,
+        manual_address: selectedClient ? null : finalCustomerAddress,
+        notas: observaciones.trim() || null,
         metodo_pago: paymentMethod,
         descuento: totals.discountAmount,
       };
@@ -256,9 +316,10 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
         discount: discountPercent,
         discountAmount: totals.discountAmount,
         total: totals.total,
-        customerName: selectedClient ? selectedClient.nombre : clientSearchText || 'Mostrador',
-        customerPhone: selectedClient ? selectedClient.telefono : manualPhone,
-        customerAddress: selectedClient ? selectedClient.direccion : manualAddress,
+        customerName: finalCustomerName,
+        customerPhone: finalCustomerPhone,
+        customerAddress: finalCustomerAddress,
+        observaciones: observaciones.trim(),
         paymentMethod,
       });
 
@@ -267,8 +328,13 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
       setDiscountPercent(0);
       setSelectedClient(null);
       setClientSearchText('');
+      setCounterName('');
+      setIsCounterConfirmed(false);
       setManualPhone('');
       setManualAddress('');
+      setObservaciones('');
+      setPaymentMethod('efectivo');
+      setObservaciones('');
       setPaymentMethod('efectivo');
 
     } catch (err: any) {
@@ -276,6 +342,14 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
       alert('Error al registrar la venta: ' + err.message);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const scrollToCart = () => {
+    setIsCartVisible(true);
+    const cartElement = document.getElementById('cart-sidebar-section');
+    if (cartElement) {
+      cartElement.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
@@ -450,16 +524,34 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
       doc.text(formatCOP(completedSale.total), width - 5, y, { align: 'right' });
       y += 10;
       
-      // 9. Info Final (Cliente, Pago)
+      // 9. Info Final (Cliente, Dirección, Teléfono, Observaciones, Pago)
       doc.setFont('courier', 'normal');
       doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
+      doc.setTextColor(50, 50, 50);
+
       doc.text(`Cliente: ${completedSale.customerName}`, width / 2, y, { align: 'center' });
       y += 4;
       if (completedSale.customerPhone) {
         doc.text(`Teléfono: ${completedSale.customerPhone}`, width / 2, y, { align: 'center' });
         y += 4;
       }
+      if (completedSale.customerAddress) {
+        const splitAddr = doc.splitTextToSize(`Dirección: ${completedSale.customerAddress}`, width - 10);
+        doc.text(splitAddr, width / 2, y, { align: 'center' });
+        y += (splitAddr.length * 4);
+      }
+
+      if (completedSale.observaciones) {
+        y += 2;
+        doc.setFont('courier', 'bold');
+        doc.text('Obs:', 5, y);
+        doc.setFont('courier', 'normal');
+        const splitObs = doc.splitTextToSize(completedSale.observaciones, width - 18);
+        doc.text(splitObs, 15, y);
+        y += (splitObs.length * 3.5) + 2;
+      }
+
+      y += 2;
       doc.text(`PAGO EN: ${completedSale.paymentMethod.toUpperCase()}`, width / 2, y, { align: 'center' });
       y += 8;
       
@@ -523,35 +615,46 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
           </div>
 
           {/* Products Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 custom-scrollbar max-h-[600px] overflow-y-auto pr-1 pb-4">
-            {filteredProducts.map(prod => {
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pb-2 min-h-[400px] content-start">
+            {paginatedProducts.map(prod => {
               const pStock = prod.stock || 0;
               const pMinStock = prod.stock_minimo || 10;
               const isOutOfStock = pStock <= 0;
               const isLowStock = pStock <= pMinStock && pStock > 0;
               
+              const qtyInCart = cart.find(ci => ci.product.id === prod.id)?.quantity || 0;
+              
               return (
                 <div 
                   key={prod.id}
                   onClick={() => !isOutOfStock && handleAddToCart(prod)}
-                  className={`bg-white rounded-xl border p-4 flex flex-col justify-between h-44 cursor-pointer transition-all ${
+                  className={`rounded-xl border p-4 flex flex-col justify-between h-44 cursor-pointer transition-all active:scale-95 duration-100 ${
                     isOutOfStock 
-                      ? 'opacity-60 border-gray-200 cursor-not-allowed' 
-                      : 'border-[#c3c5d9]/30 hover:border-[#003ec7] hover:shadow-md'
+                      ? 'bg-white opacity-60 border-gray-200 cursor-not-allowed' 
+                      : qtyInCart > 0
+                        ? 'bg-[#003ec7]/5 border-[#003ec7] shadow-sm ring-1 ring-[#003ec7]/20'
+                        : 'bg-white border-[#c3c5d9]/30 hover:border-[#003ec7] hover:shadow-md'
                   }`}
                 >
                   <div className="space-y-1 text-left">
                     <div className="flex justify-between items-start gap-1">
                       <span className="text-[9px] uppercase font-bold text-gray-400 font-display tracking-wider truncate">{prod.categoria || 'General'}</span>
-                      <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full font-display whitespace-nowrap ${
-                        isOutOfStock 
-                          ? 'bg-gray-100 text-gray-500' 
-                          : isLowStock 
-                            ? 'bg-amber-100 text-amber-800' 
-                            : 'bg-emerald-100 text-emerald-800'
-                      }`}>
-                        {isOutOfStock ? 'Agotado' : isLowStock ? `Stock: ${pStock}` : `${pStock} u.`}
-                      </span>
+                      <div className="flex gap-1 items-center shrink-0">
+                        {qtyInCart > 0 && (
+                          <span className="bg-[#003ec7] text-white text-[8px] font-black px-2 py-0.5 rounded-full font-display">
+                            {qtyInCart} en carrito
+                          </span>
+                        )}
+                        <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full font-display whitespace-nowrap ${
+                          isOutOfStock 
+                            ? 'bg-gray-100 text-gray-500' 
+                            : isLowStock 
+                              ? 'bg-amber-100 text-amber-800' 
+                              : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {isOutOfStock ? 'Agotado' : isLowStock ? `Stock: ${pStock}` : `${pStock} u.`}
+                        </span>
+                      </div>
                     </div>
                     <h3 className="text-xs font-bold text-gray-900 line-clamp-2 leading-snug">{prod.nombre}</h3>
                     <p className="text-[10px] text-[#434656] line-clamp-2 leading-relaxed">{prod.descripcion}</p>
@@ -562,9 +665,13 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
                       isOutOfStock 
                         ? 'bg-gray-100 text-gray-400' 
-                        : 'bg-[#003ec7]/10 text-[#003ec7] hover:bg-[#003ec7] hover:text-white'
+                        : qtyInCart > 0
+                          ? 'bg-[#003ec7] text-white'
+                          : 'bg-[#003ec7]/10 text-[#003ec7] hover:bg-[#003ec7] hover:text-white'
                     }`}>
-                      <span className="material-symbols-outlined text-sm">add_shopping_cart</span>
+                      <span className="material-symbols-outlined text-sm">
+                        {qtyInCart > 0 ? 'done' : 'add_shopping_cart'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -579,10 +686,35 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
               </div>
             )}
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-2 bg-white p-3 rounded-xl border border-[#c3c5d9]/30">
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-50 border border-slate-200 text-[#434656] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 flex items-center gap-1 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">chevron_left</span>
+                Anterior
+              </button>
+              <span className="text-xs font-bold text-[#434656] bg-slate-50 px-4 py-2 rounded-lg border border-slate-100">
+                Página {currentPage} de {totalPages}
+              </span>
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-50 border border-slate-200 text-[#434656] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 flex items-center gap-1 cursor-pointer"
+              >
+                Siguiente
+                <span className="material-symbols-outlined text-sm">chevron_right</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* RIGHT: Active Cart Checkout Panel (5 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-xl border border-[#c3c5d9]/30 shadow-xs p-5 flex flex-col justify-between min-h-[500px]">
+        <div id="cart-sidebar-section" ref={cartRef} className="lg:col-span-5 bg-white rounded-xl border border-[#c3c5d9]/30 shadow-xs p-5 flex flex-col justify-between min-h-[500px]">
           <div className="space-y-4">
             
             {/* Header configuration */}
@@ -642,83 +774,182 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
               )}
             </div>
 
-            {/* Customer Search (Dynamic) */}
+            {/* Customer Search & Assignment Section */}
             <div className="pt-2 border-t border-[#c3c5d9]/10 relative">
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center justify-between mb-2">
                 <label className="block text-[10px] uppercase font-bold text-[#434656] font-display">Asignar Cliente</label>
-                <button 
-                  onClick={() => setShowNewCustomerModal(true)}
-                  className="text-[10px] text-[#003ec7] font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[11px]">add</span>
-                  Nuevo Cliente
-                </button>
-              </div>
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#737688] text-lg">person</span>
-                <input 
-                  type="text" 
-                  value={clientSearchText}
-                  onChange={(e) => {
-                    setClientSearchText(e.target.value);
-                    if (selectedClient) setSelectedClient(null); // Unselect if they start typing
-                    setShowClientDropdown(true);
-                  }}
-                  onFocus={() => setShowClientDropdown(true)}
-                  placeholder="Buscar cliente o escribir nombre (Mostrador)..."
-                  className="w-full bg-[#fbf8ff] border border-[#c3c5d9] rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#003ec7] transition-all font-medium text-[#191b25]"
-                />
-                {selectedClient && (
+                {clientAssignMode === 'registered' && !selectedClient && !isCounterConfirmed && (
                   <button 
-                    onClick={() => { setSelectedClient(null); setClientSearchText(''); }}
-                    className="absolute right-2 top-3 text-gray-400 hover:text-red-500 cursor-pointer"
+                    type="button"
+                    onClick={() => setShowNewCustomerModal(true)}
+                    className="text-[10px] text-[#003ec7] font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-sm">close</span>
+                    <span className="material-symbols-outlined text-[11px]">add</span>
+                    Nuevo Cliente
                   </button>
                 )}
               </div>
 
-              {!selectedClient && clientSearchText && (
-                <div className="mt-3 grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl animate-fade-in">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Teléfono (Opcional)</label>
-                    <input
-                      type="text"
-                      value={manualPhone}
-                      onChange={(e) => setManualPhone(e.target.value)}
-                      placeholder="Para esta venta..."
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#003ec7]"
-                    />
+              {selectedClient ? (
+                /* Card: Registered Client Confirmed */
+                <div className="bg-[#003ec7]/5 border border-[#003ec7]/20 p-3 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    <div className="w-8 h-8 rounded-lg bg-[#003ec7] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                      <span className="material-symbols-outlined text-base">person</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-gray-900 truncate">{selectedClient.nombre}</p>
+                      <p className="text-[10px] text-gray-500 truncate">{selectedClient.telefono || selectedClient.email || 'Cliente Registrado'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Dirección (Opcional)</label>
-                    <input
-                      type="text"
-                      value={manualAddress}
-                      onChange={(e) => setManualAddress(e.target.value)}
-                      placeholder="Para esta venta..."
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#003ec7]"
-                    />
-                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => { setSelectedClient(null); setClientSearchText(''); }}
+                    className="p-1 text-gray-400 hover:text-red-500 rounded-lg hover:bg-white transition-all shrink-0 cursor-pointer"
+                    title="Cambiar cliente"
+                  >
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
                 </div>
-              )}
+              ) : isCounterConfirmed ? (
+                /* Card: Counter Client Confirmed */
+                <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    <div className="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                      <span className="material-symbols-outlined text-base">storefront</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-gray-900 truncate">{counterName || 'Cliente Mostrador'}</p>
+                      <p className="text-[10px] text-amber-900 truncate">
+                        {manualPhone ? `Tel: ${manualPhone}` : ''} {manualAddress ? `| Dir: ${manualAddress}` : ''} {!manualPhone && !manualAddress ? 'Venta Mostrador Confirmada' : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => { setIsCounterConfirmed(false); }}
+                    className="p-1 text-gray-400 hover:text-amber-800 rounded-lg hover:bg-white transition-all shrink-0 cursor-pointer"
+                    title="Editar cliente mostrador"
+                  >
+                    <span className="material-symbols-outlined text-sm">edit</span>
+                  </button>
+                </div>
+              ) : (
+                /* Client Assignment Form with Mode Tabs */
+                <div className="space-y-3">
+                  <div className="flex bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setClientAssignMode('registered')}
+                      className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                        clientAssignMode === 'registered' ? 'bg-white text-[#003ec7] shadow-xs font-black' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-xs">search</span>
+                      Buscar Registrado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClientAssignMode('mostrador')}
+                      className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                        clientAssignMode === 'mostrador' ? 'bg-white text-amber-700 shadow-xs font-black' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-xs">storefront</span>
+                      Venta Mostrador
+                    </button>
+                  </div>
 
-              {showClientDropdown && clientSearchText && !selectedClient && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto custom-scrollbar">
-                  {clientSuggestions.length > 0 ? (
-                    clientSuggestions.map(c => (
-                      <div 
-                        key={c.id} 
-                        onClick={() => handleSelectClient(c)}
-                        className="px-3 py-2 text-xs hover:bg-slate-50 cursor-pointer border-b border-gray-50 last:border-0"
-                      >
-                        <div className="font-bold text-gray-900">{c.nombre}</div>
-                        <div className="text-[10px] text-gray-500">{c.telefono || c.email}</div>
-                      </div>
-                    ))
+                  {clientAssignMode === 'registered' ? (
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#737688] text-lg">person</span>
+                      <input 
+                        type="text" 
+                        value={clientSearchText}
+                        onChange={(e) => {
+                          setClientSearchText(e.target.value);
+                          setShowClientDropdown(true);
+                        }}
+                        onFocus={() => setShowClientDropdown(true)}
+                        placeholder="Buscar cliente registrado por nombre..."
+                        className="w-full bg-[#fbf8ff] border border-[#c3c5d9] rounded-xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-[#003ec7] transition-all font-medium text-[#191b25]"
+                      />
+
+                      {showClientDropdown && clientSearchText && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto custom-scrollbar">
+                          {clientSuggestions.length > 0 ? (
+                            clientSuggestions.map(c => (
+                              <div 
+                                key={c.id} 
+                                onClick={() => {
+                                  handleSelectClient(c);
+                                  setShowClientDropdown(false);
+                                }}
+                                className="px-3 py-2 text-xs hover:bg-slate-50 cursor-pointer border-b border-gray-50 last:border-0"
+                              >
+                                <div className="font-bold text-gray-900">{c.nombre}</div>
+                                <div className="text-[10px] text-gray-500">{c.telefono || c.email}</div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-[10px] text-gray-500 text-center">
+                              No se encontraron clientes registrados.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   ) : (
-                    <div className="px-3 py-2 text-[10px] text-gray-500 text-center">
-                      No se encontraron clientes. Usa "Nuevo Cliente".
+                    /* Mostrador Form */
+                    <div className="space-y-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-[#434656] font-display mb-1">Nombre Cliente Mostrador *</label>
+                        <div className="relative">
+                          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#737688] text-sm">badge</span>
+                          <input 
+                            type="text" 
+                            value={counterName}
+                            onChange={(e) => setCounterName(e.target.value)}
+                            placeholder="Ej: Carlos Ruiz / Cliente Anónimo"
+                            className="w-full bg-white border border-[#c3c5d9]/60 rounded-lg pl-9 pr-3 py-2 text-xs focus:outline-none focus:border-[#003ec7] transition-all font-medium text-[#191b25]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Teléfono (Opcional)</label>
+                          <input
+                            type="text"
+                            value={manualPhone}
+                            onChange={(e) => setManualPhone(e.target.value)}
+                            placeholder="Para la factura..."
+                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#003ec7]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Dirección (Opcional)</label>
+                          <input
+                            type="text"
+                            value={manualAddress}
+                            onChange={(e) => setManualAddress(e.target.value)}
+                            placeholder="Para entrega..."
+                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-[#003ec7]"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!counterName.trim()) setCounterName('Cliente Mostrador');
+                          setIsCounterConfirmed(true);
+                        }}
+                        className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 mt-1"
+                      >
+                        <span className="material-symbols-outlined text-sm">check_circle</span>
+                        Confirmar Cliente Mostrador
+                      </button>
                     </div>
                   )}
                 </div>
@@ -766,6 +997,18 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Observaciones / Notas */}
+            <div className="pt-2 border-t border-[#c3c5d9]/10">
+              <label className="block text-[10px] uppercase font-bold text-[#434656] mb-1.5 font-display">Observaciones / Notas de la Venta</label>
+              <textarea
+                rows={2}
+                value={observaciones}
+                onChange={(e) => setObservaciones(e.target.value)}
+                placeholder="Ej: Entregar después de las 2 PM, o notas de entrega..."
+                className="w-full bg-[#fbf8ff] border border-[#c3c5d9]/50 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#003ec7] transition-all text-[#191b25] placeholder:text-[#737688]/60"
+              />
             </div>
 
           </div>
@@ -972,10 +1215,20 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
                 </div>
 
                 <div className="text-center text-[9px] text-[#434656] pt-2 space-y-1">
-                  <div>Cliente: {completedSale.customerName}</div>
-                  {completedSale.customerPhone && <div>Teléfono: {completedSale.customerPhone}</div>}
-                  <div className="uppercase">Pago en: {completedSale.paymentMethod}</div>
-                  <div className="font-bold tracking-wider pt-2">*** GRACIAS POR SU COMPRA ***</div>
+                  <div className="font-bold text-gray-800 uppercase text-[10px]">Datos del Cliente</div>
+                  <div><span className="font-semibold">Cliente:</span> {completedSale.customerName}</div>
+                  {completedSale.customerPhone && <div><span className="font-semibold">Teléfono:</span> {completedSale.customerPhone}</div>}
+                  {completedSale.customerAddress && <div><span className="font-semibold">Dirección:</span> {completedSale.customerAddress}</div>}
+                  
+                  {completedSale.observaciones && (
+                    <div className="text-left bg-slate-50 p-2 rounded-lg border border-slate-200 mt-2">
+                      <span className="font-bold text-gray-700 block">Observaciones:</span>
+                      <span className="text-gray-600 italic whitespace-pre-wrap">{completedSale.observaciones}</span>
+                    </div>
+                  )}
+
+                  <div className="uppercase pt-2">Pago en: {completedSale.paymentMethod}</div>
+                  <div className="font-bold tracking-wider pt-2 text-black">*** GRACIAS POR SU COMPRA ***</div>
                 </div>
               </div>
               {/* Fin de contenido a imprimir */}
@@ -1002,6 +1255,34 @@ export const NewSale: React.FC<NewSaleProps> = ({ onCancel, onFinish, user }) =>
                 >
                   Solo Cerrar
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Floating Cart Bar (Visible only on mobile/tablet, hidden on desktop and when cart checkout panel is visible) */}
+        {cart.length > 0 && !isCartVisible && (
+          <div className="fixed bottom-4 left-4 right-4 z-40 lg:hidden transition-all duration-300">
+            <div 
+              onClick={scrollToCart}
+              className="bg-[#091426] text-white px-4 py-3 rounded-2xl shadow-xl flex items-center justify-between border border-white/10 cursor-pointer hover:bg-slate-900 transition-all active:scale-[0.98]"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#003ec7] flex items-center justify-center relative shrink-0">
+                  <span className="material-symbols-outlined text-sm text-white font-bold">shopping_cart</span>
+                  <span className="absolute -top-1.5 -right-1.5 bg-[#ba1a1a] text-[9px] font-black text-white w-4.5 h-4.5 rounded-full flex items-center justify-center">
+                    {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Carrito de Compra</p>
+                  <p className="text-xs font-black text-white">{formatCOP(totals.total)}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-1 text-[#003ec7] font-black text-[10px] uppercase tracking-wider bg-white px-3 py-1.5 rounded-xl font-display shadow-xs shrink-0">
+                Ver Carrito
+                <span className="material-symbols-outlined text-xs">arrow_downward</span>
               </div>
             </div>
           </div>
