@@ -227,10 +227,9 @@ export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin, a
           </button>
 
           {[
-            //SE OCULTAN HASTA REALIZAR LA CONFIGURACIONES NECESIARIOS PARA USARLOS
-            //   { label: 'Notificaciones', icon: Bell },
-            //  { label: 'Seguridad', icon: Shield },
-            //  { label: 'Facturación', icon: CreditCard },
+            { label: 'Notificaciones', icon: Bell },
+            { label: 'Seguridad', icon: Shield },
+            { label: 'Facturación', icon: CreditCard },
           ].map((item) => (
             <button
               key={item.label}
@@ -488,7 +487,7 @@ export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin, a
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-100">
                   <div>
                     <span className="px-2.5 py-1 bg-brand-primary/10 text-brand-primary text-[10px] font-black uppercase tracking-widest rounded-md">Desarrollador Oficial</span>
-                    <h3 className="text-2xl font-black text-[#091426] mt-2">Soporte Técnico SoftDev</h3>
+                    <h3 className="text-2xl font-black text-[#091426] mt-2">Soporte Técnico SoftBootDev</h3>
                     <p className="text-sm text-slate-500 font-medium mt-1">Estamos aquí para ayudarte a resolver dudas o inconvenientes con tu plataforma RESGER.</p>
                   </div>
                   <div className="flex items-center gap-2 bg-[#091426] text-white py-2.5 px-4 rounded-xl shadow-lg shrink-0">
@@ -698,26 +697,21 @@ export const Settings: React.FC<SettingsProps> = ({ user, onNavigate, isAdmin, a
                 ))}
               </div>
             </div>
-            {/* se cpmenta mientes se desarrolla */}
-            {/* 
             <div className="p-6 bg-slate-900 rounded-2xl text-white shadow-xl shadow-slate-900/10">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Suscripción RESGER</h4>
               <div className="flex items-center gap-4 mb-6">
                 <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center">
                   <Shield className="w-6 h-6 text-indigo-400" />
                 </div>
-                
                 <div>
                   <p className="text-xl font-black">Plan Enterprise</p>
                   <p className="text-xs text-slate-400">Próxima facturación: 15 Mayo 2024</p>
                 </div>
-                
               </div>
               <button className="w-full py-3 bg-white text-[#091426] rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 transition-all">
                 Gestionar Suscripción
               </button>
             </div>
-            */}
           </div>
         </main>
       </div>
