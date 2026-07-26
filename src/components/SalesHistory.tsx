@@ -684,12 +684,17 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-brand-navy p-8 rounded-2xl text-white flex flex-col justify-between relative overflow-hidden group">
           <div className="relative z-10">
-            <h4 className="text-xl font-black uppercase tracking-tight mb-2">Need detailed analysis?</h4>
-            <p className="text-sm opacity-60 font-medium max-w-md">Generate a custom BI report with historical forecasting, deep client segmentation and churn analysis.</p>
-            <button className="mt-6 px-8 py-3 bg-white text-[#091426] rounded-xl font-black text-xs uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-2xl flex items-center gap-2">
-              Go to Analytics
+            <h4 className="text-xl font-black uppercase tracking-tight mb-2">¿Necesitas un análisis detallado?</h4>
+            <p className="text-sm opacity-60 font-medium max-w-md">Genera reportes de Inteligencia de Negocios (BI) personalizados, con pronóstico de ventas histórico, segmentación de clientes y análisis de retención.</p>
+            <a 
+              href="https://wa.me/573007159393?text=Quiero%20saber%20sobre%20reporteria%20de%20mi%20negocio"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-6 px-8 py-3 bg-white text-[#091426] rounded-xl font-black text-xs uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-2xl flex items-center gap-2 w-fit cursor-pointer"
+            >
+              Solicitar Reporte
               <ArrowRight className="w-4 h-4" />
-            </button>
+            </a>
           </div>
           <div className="absolute -bottom-10 -right-10 w-64 h-64 bg-white/5 rounded-full blur-[100px] group-hover:scale-125 transition-transform duration-700"></div>
           <motion.div 
@@ -893,7 +898,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
                     const doc = new jsPDF({
                       orientation: 'portrait',
                       unit: 'mm',
-                      format: [80, 200]
+                      format: [80, 240]
                     });
                     
                     const width = doc.internal.pageSize.getWidth();
@@ -995,12 +1000,39 @@ export const SalesHistory: React.FC<SalesHistoryProps> = () => {
                     doc.text(formatCOP(Number(selectedSale.total || 0)), width - 5, y, { align: 'right' });
                     y += 10;
                     
-                    // 7. Info Final
+                    // 7. Info Final (Cliente, Dirección, Teléfono, Observaciones, Pago)
                     doc.setFont('courier', 'normal');
                     doc.setFontSize(8);
-                    doc.setTextColor(100, 100, 100);
-                    doc.text(`Cliente: ${selectedSale.cliente?.nombre || selectedSale.manual_name || 'Venta Rápida'}`, width / 2, y, { align: 'center' });
+                    doc.setTextColor(50, 50, 50);
+
+                    const customerName = selectedSale.cliente?.nombre || selectedSale.manual_name || 'Venta Rápida';
+                    const customerPhone = selectedSale.cliente?.telefono || selectedSale.manual_phone;
+                    const customerAddress = selectedSale.cliente?.direccion || selectedSale.manual_address;
+                    const observaciones = selectedSale.notas;
+
+                    doc.text(`Cliente: ${customerName}`, width / 2, y, { align: 'center' });
                     y += 4;
+                    if (customerPhone) {
+                      doc.text(`Teléfono: ${customerPhone}`, width / 2, y, { align: 'center' });
+                      y += 4;
+                    }
+                    if (customerAddress) {
+                      const splitAddr = doc.splitTextToSize(`Dirección: ${customerAddress}`, width - 10);
+                      doc.text(splitAddr, width / 2, y, { align: 'center' });
+                      y += (splitAddr.length * 4);
+                    }
+
+                    if (observaciones) {
+                      y += 2;
+                      doc.setFont('courier', 'bold');
+                      doc.text('Obs:', 5, y);
+                      doc.setFont('courier', 'normal');
+                      const splitObs = doc.splitTextToSize(observaciones, width - 18);
+                      doc.text(splitObs, 15, y);
+                      y += (splitObs.length * 3.5) + 2;
+                    }
+
+                    y += 2;
                     doc.text(`PAGO EN: ${formatPaymentMethod(selectedSale.metodo_pago).toUpperCase()}`, width / 2, y, { align: 'center' });
                     y += 8;
                     
